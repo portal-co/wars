@@ -305,10 +305,13 @@ impl Opts<Module<'static>> {
                                         };
                                         let g = self.render_generics(&quote! {c}, &self.module.signatures[*sig_index]);
                                         quote! {
-                                            match #root::_rexport::tramp::tramp(#root::func::call_ref::<#g,C>(ctx,#root::func::cast(#r.clone()),#root::_rexport::tuple_list::tuple_list!(#(#root::func::cast::<_,_,C>(#vals .clone())),*))){
+                                            {
+                                            let r = #r.clone();
+                                            match #root::_rexport::tramp::tramp(#root::func::call_ref::<#g,C>(ctx,#root::func::cast(r),#root::_rexport::tuple_list::tuple_list!(#(#root::func::cast::<_,_,C>(#vals .clone())),*))){
                                                 Ok(a) => a,
                                                 Err(e) => return #root::_rexport::tramp::BorrowRec::Ret(Err(e))
                                             }
+                                        }
                                         }
                                 },
                                 Operator::RefFunc { func_index } => {
@@ -577,8 +580,9 @@ impl Opts<Module<'static>> {
                         };
                         let g = self.render_generics(&quote! {c}, &self.module.signatures[*sig]);
                         quote! {
+                            let r = #r.clone();
                             return #root::_rexport::tramp::BorrowRec::Call(#root::_rexport::tramp::Thunk::new(move||{
-                            #root::func::call_ref::<#g,C>(ctx,#root::func::cast(#r.clone()),#root::_rexport::tuple_list::tuple_list!(#(#root::func::cast::<_,_,C>(#vals .clone())),*))
+                            #root::func::call_ref::<#g,C>(ctx,#root::func::cast(r),#root::_rexport::tuple_list::tuple_list!(#(#root::func::cast::<_,_,C>(#vals .clone())),*))
                         }))
                         }
                     }
@@ -997,7 +1001,7 @@ pub fn go(opts: &Opts<Vec<u8>>) -> proc_macro2::TokenStream {
                 #(#fs)*
 
             }
-            pub fn init<C: #name>(ctx: &mut C) -> #root::_rexport::anyhow::Result<()>{
+            pub fn init<C: #name + 'static>(ctx: &mut C) -> #root::_rexport::anyhow::Result<()>{
                 #(#init);*;
                 return Ok(())
             }
