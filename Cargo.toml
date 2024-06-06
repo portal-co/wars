@@ -1,0 +1,7 @@
+[workspace]
+members=[ "wars", "wars-macro","wars-rt", "wars-test"]
+resolver="2"
+
+[workspace.dependencies]
+
+portal-pc-waffle = {git="https://github.com/portal-co/waffle-.git",branch="pr/changes2"}
