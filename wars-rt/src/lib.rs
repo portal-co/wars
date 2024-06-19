@@ -281,3 +281,6 @@ pub fn select<T>(u: u32, t: T, t2: T) -> anyhow::Result<tuple_list::tuple_list_t
 pub fn i32wrapi64(a: u64) -> anyhow::Result<tuple_list::tuple_list_type!(u32)> {
     return Ok(tuple_list::tuple_list!((a & 0xffffffff) as u32));
 }
+pub fn i64extend132u(a: u32) -> anyhow::Result<tuple_list::tuple_list_type!(u64)>{
+    Ok(tuple_list::tuple_list!(a as u64))
+}

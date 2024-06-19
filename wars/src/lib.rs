@@ -652,7 +652,7 @@ impl Opts<Module<'static>> {
                                         #root::_rexport::tuple_list::tuple_list!(if #cond != 0{
                                             #then
                                         }else{
-                                            #els
+                                            #els.into()
                                         })
                                     }
                                 },
