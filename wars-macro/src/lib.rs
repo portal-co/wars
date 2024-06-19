@@ -1,17 +1,19 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, sync::Arc};
 
 use expander::{Edition, Expander};
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
-use syn::{parse::Parse, parse_macro_input, Ident, Path, Token};
-use wars::Opts;
+use syn::{parse::Parse, parse_macro_input, Ident, LitBool, Path, Token};
+use wars::{Flags, Opts};
 
 struct O {
     pub crate_path: syn::Path,
     pub module: Vec<u8>,
     pub name: Ident,
-    // pub cfg: Arc<dyn ImportCfg>,
+    pub flags: Flags,
+    pub embed: proc_macro2::TokenStream,
+    pub data: BTreeMap<Ident, proc_macro2::TokenStream>, // pub cfg: Arc<dyn ImportCfg>,
 }
 // struct NoopCfg {}
 // impl ImportCfg for NoopCfg {
@@ -27,6 +29,9 @@ impl Parse for O {
             crate_path: syn::parse(quote! {::wars_rt}.into())?,
             module: vec![],
             name: Ident::new("Wars", Span::call_site()),
+            flags: Default::default(),
+            embed: Default::default(),
+            data: BTreeMap::new(),
             // cfg: Arc::new(NoopCfg {}),
         };
         while input.lookahead1().peek(Ident) {
@@ -59,6 +64,22 @@ impl Parse for O {
                 "name" => {
                     o.name = input.parse()?;
                 }
+                "r#async" => {
+                    let b: LitBool = input.parse()?;
+                    if b.value {
+                        o.flags |= Flags::ASYNC
+                    } else {
+                        o.flags &= Flags::ASYNC.complement();
+                    }
+                }
+                "legacy_host" => {
+                    let b: LitBool = input.parse()?;
+                    if b.value {
+                        o.flags |= Flags::LEGACY
+                    } else {
+                        o.flags &= Flags::LEGACY.complement();
+                    }
+                }
                 _ => return Err(syn::Error::new(i.span(), "unexpected type")),
             };
             let _comma: Token![,] = input.parse()?;
@@ -73,12 +94,18 @@ impl Parse for O {
 #[proc_macro]
 pub fn wars(a: TokenStream) -> TokenStream {
     let o = parse_macro_input!(a as O);
-    let x = wars::go(&Opts {
-        crate_path: o.crate_path,
-        module: o.module,
-        name: o.name,
-        // cfg: o.cfg,
-    });
+    let x = wars::go(
+        &Opts {
+            crate_path: o.crate_path,
+            module: o.module,
+            name: o.name,
+            flags: o.flags,
+            embed: o.embed,
+            data: o.data,
+            // cfg: o.cfg,
+        }
+        .to_mod(),
+    );
     let expanded = Expander::new("wars")
         .add_comment("This is generated code!".to_owned())
         .fmt(Edition::_2021)
@@ -92,3 +119,20 @@ pub fn wars(a: TokenStream) -> TokenStream {
         });
     expanded.into()
 }
+
+// #[proc_macro]
+// pub fn wasix(a: TokenStream) -> TokenStream {
+//     let x = wars::wasix::wasix();
+//     let expanded = Expander::new("wars_wasix")
+//         .add_comment("This is generated code!".to_owned())
+//         .fmt(Edition::_2021)
+//         .verbose(true)
+//         // common way of gating this, by making it part of the default feature set
+//         .dry(cfg!(feature = "no-file-expansion"))
+//         .write_to_out_dir(x.clone())
+//         .unwrap_or_else(|e| {
+//             eprintln!("Failed to write to file: {:?}", e);
+//             x
+//         });
+//     expanded.into()
+// }

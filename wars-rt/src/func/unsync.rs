@@ -1,10 +1,23 @@
-use std::sync::Arc;
+use std::{future::Future, pin::Pin, sync::Arc};
 
 use anyhow::Context;
-use tramp::{tramp, BorrowRec, Thunk};
-pub mod unsync;
-pub fn ret<'a,T>(a: T) -> BorrowRec<'a,T>{
-    BorrowRec::Ret(a)
+// use tramp::{tramp, BorrowRec, Thunk};
+pub fn ret<'a,T>(a: T) -> AsyncRec<'a,T>{
+    AsyncRec::Ret(a)
+}
+pub enum AsyncRec<'a,T>{
+    Ret(T),
+    Async(Pin<Box<dyn Future<Output = AsyncRec<'a,T>> + Send + Sync + 'a>>)
+}
+impl<'a,T> AsyncRec<'a,T>{
+    pub async fn go(mut self) -> T{
+        loop{
+            self = match self{
+                AsyncRec::Ret(r) => return r,
+                AsyncRec::Async(a) => a.await,
+            }
+        }
+    }
 }
 pub trait CtxSpec: Sized {
     type ExternRef: Clone;
@@ -19,7 +32,7 @@ pub enum Value<C: CtxSpec> {
             dyn for<'a> Fn(
                     &'a mut C,
                     Vec<Value<C>>,
-                ) -> tramp::BorrowRec<'a, anyhow::Result<Vec<Value<C>>>>
+                ) -> AsyncRec<'a, anyhow::Result<Vec<Value<C>>>>
                 + Send + Sync + 'static,
         >,
     ),
@@ -30,7 +43,7 @@ pub fn call_ref<'a, A: CoeVec<C> + 'static, B: CoeVec<C> + 'static, C: CtxSpec +
     ctx: &'a mut C,
     go: Df<A,B,C>,
     a: A,
-) -> tramp::BorrowRec<'a, anyhow::Result<B>> {
+) -> AsyncRec<'a, anyhow::Result<B>> {
     // let go: Df<A, B, C> = cast(go);
     go(ctx, a)
 }
@@ -132,25 +145,25 @@ impl<C: CtxSpec, A: Coe<C>, B: CoeVec<C>> CoeVec<C> for (A, B) {
     }
 }
 pub fn map_rec<'a, T: 'a, U>(
-    r: BorrowRec<'a, T>,
-    go: impl FnOnce(T) -> U + 'a,
-) -> BorrowRec<'a, U> {
+    r: AsyncRec<'a, T>,
+    go: impl FnOnce(T) -> U + Send + Sync + 'a,
+) -> AsyncRec<'a, U> {
     match r {
-        BorrowRec::Ret(a) => BorrowRec::Ret(go(a)),
-        BorrowRec::Call(t) => BorrowRec::Call(Thunk::new(move || {
-            let t = t.compute();
-            map_rec(t, go)
+        AsyncRec::Ret(x) => AsyncRec::Ret(go(x)),
+        AsyncRec::Async(a) => AsyncRec::Async(Box::pin(async move{
+            let v = a.await;
+            map_rec(v, go)
         })),
     }
 }
 pub type Df<A, B, C> =
-    Arc<dyn for<'a> Fn(&'a mut C, A) -> tramp::BorrowRec<'a, anyhow::Result<B>> + Send + Sync + 'static>;
+    Arc<dyn for<'a> Fn(&'a mut C, A) -> AsyncRec<'a, anyhow::Result<B>> + Send + Sync + 'static>;
 
 pub fn da<
     A,
     B,
     C,
-    F: for<'a> Fn(&'a mut C, A) -> tramp::BorrowRec<'a, anyhow::Result<B>> + Send + Sync + 'static,
+    F: for<'a> Fn(&'a mut C, A) -> AsyncRec<'a, anyhow::Result<B>> + Send + Sync + 'static,
 >(
     f: F,
 ) -> Df<A,B,C> {
@@ -164,7 +177,7 @@ impl<C: CtxSpec + 'static, A: CoeVec<C> + 'static, B: CoeVec<C> + 'static> Coe<C
             T: for<'a> Fn(
                     &'a mut C,
                     Vec<Value<C>>,
-                ) -> tramp::BorrowRec<'a, anyhow::Result<Vec<Value<C>>>>
+                ) -> AsyncRec<'a, anyhow::Result<Vec<Value<C>>>>
                 + 'static,
         >(
             a: T,
@@ -174,7 +187,7 @@ impl<C: CtxSpec + 'static, A: CoeVec<C> + 'static, B: CoeVec<C> + 'static> Coe<C
         Value::FunRef(Arc::new(x(move |ctx, x| {
             let x = match A::uncoe(x) {
                 Ok(x) => x,
-                Err(e) => return BorrowRec::Ret(Err(e)),
+                Err(e) => return AsyncRec::Ret(Err(e)),
             };
             let x = self(ctx, x);
             map_rec(x, |a| a.map(|b| b.coe()))
@@ -190,17 +203,5 @@ impl<C: CtxSpec + 'static, A: CoeVec<C> + 'static, B: CoeVec<C> + 'static> Coe<C
             let v = x(ctx, v);
             map_rec(v, |a| a.and_then(B::uncoe))
         }))
-    }
-}
-pub trait Call<A, B, C>:
-    for<'a> Fn(&'a mut C, A) -> tramp::BorrowRec<'a, anyhow::Result<B>> + 'static
-{
-    fn call(&self, c: &mut C, a: A) -> anyhow::Result<B>;
-}
-impl<A, B, C, T: for<'a> Fn(&'a mut C, A) -> tramp::BorrowRec<'a, anyhow::Result<B>> + 'static>
-    Call<A, B, C> for T
-{
-    fn call(&self, c: &mut C, a: A) -> anyhow::Result<B> {
-        tramp((self)(c, a))
     }
 }

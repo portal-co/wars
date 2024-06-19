@@ -1,5 +1,5 @@
 [workspace]
-members=[ "wars", "wars-macro","wars-rt", "wars-test"]
+members=[ "waffle-func-reloop", "wars", "wars-component", "wars-macro","wars-rt", "wars-test"]
 resolver="2"
 
 [workspace.dependencies]
