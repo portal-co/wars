@@ -27,6 +27,57 @@ impl MetaType {
         }
     }
 }
+pub trait Native: Sized {
+    fn to_val(&self, v: &mut wasm_runtime_layer::Value);
+    fn val(&self) -> wasm_runtime_layer::Value {
+        let mut x = wasm_runtime_layer::Value::I32(0);
+        self.to_val(&mut x);
+        return x;
+    }
+    fn from_val(v: &wasm_runtime_layer::Value) -> anyhow::Result<Self>;
+}
+pub trait Natives: Sized {
+    fn to_val(&self, v: &mut [wasm_runtime_layer::Value]);
+    fn from_val(v: &[wasm_runtime_layer::Value]) -> anyhow::Result<Self>;
+}
+impl Natives for () {
+    fn to_val(&self, v: &mut [wasm_runtime_layer::Value]) {}
+
+    fn from_val(v: &[wasm_runtime_layer::Value]) -> anyhow::Result<Self> {
+        Ok(())
+    }
+}
+impl<T: Native, U: Natives> Natives for (T, U) {
+    fn to_val(&self, v: &mut [wasm_runtime_layer::Value]) {
+        self.0.to_val(&mut v[0]);
+        self.1.to_val(&mut v[1..]);
+    }
+
+    fn from_val(v: &[wasm_runtime_layer::Value]) -> anyhow::Result<Self> {
+        Ok((T::from_val(&v[0])?, U::from_val(&v[1..])?))
+    }
+}
+macro_rules! native {
+    ($t:ty as $i:ident) => {
+        impl Native for $t {
+            fn to_val(&self, v: &mut wasm_runtime_layer::Value) {
+                *v = wasm_runtime_layer::Value::$i(self.clone());
+            }
+            fn from_val(v: &wasm_runtime_layer::Value) -> anyhow::Result<Self> {
+                match v {
+                    wasm_runtime_layer::Value::$i(w) => Ok(w.clone()),
+                    _ => anyhow::bail!("invalid value"),
+                }
+            }
+        }
+    };
+}
+native!(i32 as I32);
+native!(i64 as I64);
+native!(f32 as F32);
+native!(f64 as F64);
+native!(Option<wasm_runtime_layer::Func> as FuncRef);
+native!(Option<wasm_runtime_layer::ExternRef> as ExternRef);
 pub fn translate_in<C: CtxSpec + AsContextMut<UserState = D> + 'static, D: AsMut<C>>(
     val: &crate::func::Value<C>,
     ctx: &mut C,
@@ -69,10 +120,10 @@ where
                 },
             )))
         }
-        crate::Value::Null => match wrl_ty{
+        crate::Value::Null => match wrl_ty {
             MetaType::ExternRef => wasm_runtime_layer::Value::ExternRef(None),
             MetaType::FunRef { params, returns } => wasm_runtime_layer::Value::FuncRef(None),
-            _ => anyhow::bail!("invalid null")
+            _ => anyhow::bail!("invalid null"),
         },
         crate::Value::ExRef(e) => {
             wasm_runtime_layer::Value::ExternRef(Some(ExternRef::new(ctx, e.clone())))

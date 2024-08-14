@@ -1,12 +1,21 @@
-use std::{collections::BTreeMap, convert::Infallible, iter::once, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    convert::Infallible,
+    f32::consts::E,
+    iter::once,
+    sync::Arc,
+};
+
 
 use proc_macro2::{Span, TokenStream};
 use quasiquote::quasiquote;
 use quote::{format_ident, quote, ToTokens};
 use relooper::{reloop, BranchMode, ShapedBlock};
+use sha3::Digest;
 use syn::{Ident, Lifetime};
 use waffle::{
-    cfg::CFGInfo, entity::EntityRef, Block, BlockTarget, Export, ExportKind, Func, ImportKind, Memory, Module, Operator, Signature, SignatureData, Type, Value
+    cfg::CFGInfo, entity::EntityRef, Block, BlockTarget, Export, ExportKind, Func, ImportKind,
+    Memory, Module, Operator, Signature, SignatureData, Type, Value,
 };
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -14,7 +23,9 @@ bitflags::bitflags! {
         const HOST_MEMORY = 0x1;
         const ASYNC = 0x2;
         const LEGACY = 0x4;
-        // const WASIX = 0x8;
+        const WASIX = 0x8;
+        const BIND = 0x10;
+        const PIT = 0x20;
         // const UNSANDBOXED = 0x2;
     }
 }
@@ -70,6 +81,15 @@ impl Opts<Module<'static>> {
                     }
                 };
             }
+            if self.flags.contains(Flags::WASIX) {
+                if i.module == "wasi_snapshot_preview1" || i.module == "wasix_32v1" {
+                    if i.name == "memory" {
+                        return quote! {
+                            ctx.wasix_memory()
+                        };
+                    }
+                }
+            }
         }
         let m2 = format_ident!("{m}");
         quote! {
@@ -89,6 +109,36 @@ impl Opts<Module<'static>> {
                 match name {
                     _ => {}
                 }
+            }
+        }
+        if self.flags.contains(Flags::WASIX) {
+            if module == "wasi_snapshot_preview1" || module == "wasix_32v1" {
+                return quasiquote! {
+                    #root::wasix::#{format_ident!("{name}")}(#(#params),*)
+                };
+            }
+        }
+        if self.flags.contains(Flags::BIND) {
+            if module == "wars/bind" {
+                if name == "!!drop" {
+                    return quasiquote! {
+                        {
+                            let v = self.data().rust_table.remove(#(#params),*).unwrap();
+                            Ok(())
+                        }
+                    };
+                }
+                let params = params.collect::<Vec<_>>();
+                return quasiquote! {
+                    {
+                        let v = #{syn::parse_str::<TokenStream>(&name).unwrap()}(#(unsafe{#root::get_cell(self.data().rust_table.get(&#params)).unwrap()}),*)#{if self.flags.contains(Flags::ASYNC){
+                            quote!{.await}
+                        }else{
+                            quote!{}
+                        }};
+                        v.map(|x|(alloc(&mut self.data().rust_table,#root::any_cell(x)),()))
+                    }
+                };
             }
         }
         //     if a == "fs" {
@@ -156,6 +206,114 @@ impl Opts<Module<'static>> {
         //         }
         //     }
         // }
+        if self.flags.contains(Flags::PIT) {
+            if let Some(i) = module.strip_prefix("pit/") {
+                let x: [u8; 32] = hex::decode(i).unwrap().try_into().unwrap();
+                if let Some(s) = name.strip_prefix("~") {
+                    let s = {
+                        let mut h = sha3::Sha3_256::default();
+                        h.update(s);
+                        h.finalize()
+                    };
+                    return quasiquote! {
+                        #{self.fp()}::ret(Ok(#{self.fp()}::Value::<C>::ExternRef(#root::Pit{
+                            id: [#(#x),*],
+                            x: #{self.fp()}::CoeVec::coe(#root::tuple_list::tuple_list!(#(#params),*)),
+                            s: [#(#s),*],
+                        }.into())))
+                    };
+                }
+
+                let mut f = params.next().unwrap();
+                // let id = format_ident!("{}", bindname(&format!("pit/{i}/~{PIT_NS}/{name}")));
+                // ctx.#id(x.x,#(#params),*)
+                let params = params.collect::<Vec<_>>();
+                let cases = self
+                    .module
+                    .exports
+                    .iter()
+                    .filter_map(|x| x.name.strip_prefix(&format!("pit/{i}/~")))
+                    .filter_map(|x| x.strip_suffix(&format!("/{name}")))
+                    .map(|s| {
+                        let id = format_ident!("{}", bindname(&format!("pit/{i}/~{s}/{name}")));
+                        let s = {
+                            let mut h = sha3::Sha3_256::default();
+                            h.update(s);
+                            h.finalize()
+                        };
+                        quasiquote! {
+                            [#(#s),*] => {
+                                let mut y = #{self.fp()}::CoeVec::coe(#root::tuple_list::tuple_list!(#(#params),*));
+                                y.extend(&mut x.x.clone());
+                                ctx.#id(#{self.fp()}::CoeVec::uncoe(y))
+                            }
+                        }
+                    });
+                return quasiquote! {
+                    'a: {
+                        let x = #f;
+                        let #{self.fp()}::Value::<C>::ExternRef(x) = x else{
+                            break 'a #{self.fp()}::ret(Err(#root::_rexport::anyhow::anyhow!("not an externref")))
+                        };
+                        let Ok(x) = x.try_into() else{
+                            break 'a #{self.fp()}::ret(Err(#root::_rexport::anyhow::anyhow!("not a pit externref")))
+                        };
+                        let x: #root::Pit = x;
+                        match x.s{
+                            #(#cases),*,
+                            _ => break 'a #{self.fp()}::ret(Err(#root::_rexport::anyhow::anyhow!("invalid target")))
+                        }
+                    }
+                };
+            }
+            if module == "pit" && name == "drop" {
+                let mut f = params.next().unwrap();
+                let cases = self
+                    .module
+                    .exports
+                    .iter()
+                    .filter_map(|x| {
+                        let x = x.name.as_str();
+                        let x = x.strip_prefix("pit/")?;
+                        let (a, x) = x.split_once("/~")?;
+                        let s = x.strip_suffix(".drop")?;
+                        return Some((a, s));
+                    })
+                    .map(|(a, s)| {
+                        let x = hex::decode(a).unwrap();
+                        let id = format_ident!("{}", bindname(&format!("pit/{a}/~{s}.drop")));
+                        let s = {
+                            let mut h = sha3::Sha3_256::default();
+                            h.update(s);
+                            h.finalize()
+                        };
+                        // let id = format_ident!(
+                        //     "{}",
+                        //     bindname(&format!("pit/{}/~{PIT_NS}.drop", i.rid_str()))
+                        // ); ctx.#id(x.x)
+                        quasiquote!(
+                            ([#(#x),*],[#(#s),*]) => ctx.#id(#{self.fp()}::CoeVec::uncoe(x.x))
+                        )
+                    });
+                return quasiquote! {
+                    'a: {
+                        let x = #f;
+                        let #{self.fp()}::Value::<C>::ExternRef(x) = x else{
+                            break 'a #{self.fp()}::ret(Ok(()));
+                        };
+                        if let Ok(x) = x.try_into(){
+                            let x: #root::Pit = x;
+                            break 'a match (x.id,x.s){
+                                #(#cases),*,
+                                _ => #{self.fp()}::ret(Ok(()))
+                            }
+                        }else{
+                            break 'a #{self.fp()}::ret(Ok(()))
+                        }
+                    }
+                };
+            }
+        };
         let id = format_ident!("{}_{}", bindname(module), bindname(name));
         return quote! {
             ctx.#id(#(#params),*)
@@ -220,7 +378,7 @@ impl Opts<Module<'static>> {
             .enumerate()
             .map(|(a, _)| format_ident!("p{a}"));
         let returns = data.returns.iter().map(|x| self.render_ty(&ctx, *x));
-        if self.flags.contains(Flags::ASYNC) {
+        let mut x = if self.flags.contains(Flags::ASYNC) {
             quote! {
                 fn #name<'a,C: #base + 'static>(ctx: &'a mut C, #root::_rexport::tuple_list::tuple_list!(#(#param_ids),*): #root::_rexport::tuple_list::tuple_list_type!(#(#params),*)) -> #root::func::unsync::AsyncRec<'a,#root::_rexport::anyhow::Result<#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)>>
             }
@@ -228,7 +386,17 @@ impl Opts<Module<'static>> {
             quote! {
                 fn #name<'a,C: #base + 'static>(ctx: &'a mut C, #root::_rexport::tuple_list::tuple_list!(#(#param_ids),*): #root::_rexport::tuple_list::tuple_list_type!(#(#params),*)) -> #root::_rexport::tramp::BorrowRec<'a,#root::_rexport::anyhow::Result<#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)>>
             }
+        };
+        if let Some(t) = self.roots.get("tracing") {
+            x = quote! {
+                #[#t::instrument]
+                #x
+            };
         }
+        return x;
+    }
+    pub fn fname(&self, a: Func) -> Ident {
+        format_ident!("{a}_{}", bindname(self.module.funcs[a].name()))
     }
     pub fn render_fun_ref(&self, ctx: &TokenStream, x: Func) -> TokenStream {
         let root = self.crate_path.clone();
@@ -239,7 +407,7 @@ impl Opts<Module<'static>> {
         }
         let generics =
             self.render_generics(ctx, &self.module.signatures[self.module.funcs[x].sig()]);
-        let x = format_ident!("{x}");
+        let x = self.fname(x);
         quasiquote! {
             #{self.fp()}::da::<#generics,C,_>(|ctx,arg|#x(ctx,arg))
         }
@@ -387,7 +555,7 @@ impl Opts<Module<'static>> {
                                 Operator::Call { function_index } => {
                                     match self.module.funcs[*function_index].body(){
                                         Some(_) => {
-                                            let func = format_ident!("{function_index}");
+                                            let func = self.fname(*function_index);
                                             let vals = vals.iter().map(|a|format_ident!("{a}"));
                                             quasiquote! {
                                                 {
@@ -523,7 +691,7 @@ impl Opts<Module<'static>> {
                                             Ok(a) => a,
                                             Err(e) => return #{self.fp()}::ret(Err(e))
                                         }) / 65536;
-                                        match #root::Memory::grow(ctx.#m(),(#a .clone() as usize) * 65536){
+                                        match #root::Memory::grow(ctx.#m(),(#a .clone() as u64) * 65536){
                                             Ok(a) => a,
                                             Err(e) => return #{self.fp()}::ret(Err(e))
                                         };
@@ -539,8 +707,8 @@ impl Opts<Module<'static>> {
                                     let len = format_ident!("{}",vals[2].to_string());
                                     quote!{
                                         {
-                                            let m = #src[(#src_ptr as usize)..][..(#len as usize)].to_owned();
-                                            #dst[(#dst_ptr as usize)..][..(#len as usize)].copy_from_slice(&m);
+                                            let m = #src.read(#src_ptr as u64,#len as u64)?.as_ref().as_ref().to_owned();
+                                            #dst.write(#dst_ptr as u64,&m)?;
                                         ()
                                         }
                                     }
@@ -779,7 +947,7 @@ impl Opts<Module<'static>> {
                                         #{self.fp()}::cast::<_,_,C>(#a)
                                     }
                                 });
-                                let func = format_ident!("{func}");
+                                let func = self.fname(*func);
                                 if self.flags.contains(Flags::ASYNC) {
                                     quote! {
                                         #func(ctx,#root::_rexport::tuple_list::tuple_list!(#(#values),*))
@@ -948,7 +1116,7 @@ impl Opts<Module<'static>> {
         }
     }
     pub fn render_fn(&self, f: Func) -> TokenStream {
-        let name = format_ident!("{f}");
+        let name = self.fname(f);
         let sig = self.render_fn_sig(
             name.clone(),
             &self.module.signatures[self.module.funcs[f].sig()],
@@ -1075,6 +1243,7 @@ impl Opts<Module<'static>> {
         }
     }
 }
+#[derive(Clone)]
 pub struct Opts<B> {
     pub crate_path: syn::Path,
     pub module: B,
@@ -1082,6 +1251,7 @@ pub struct Opts<B> {
     pub flags: Flags,
     pub embed: TokenStream,
     pub data: BTreeMap<Ident, TokenStream>,
+    pub roots: BTreeMap<String, TokenStream>,
     // pub cfg: Arc<dyn ImportCfg>,
 }
 impl<X: AsRef<[u8]>> Opts<X> {
@@ -1104,6 +1274,7 @@ impl<X: AsRef<[u8]>> Opts<X> {
             flags: opts.flags,
             embed: opts.embed.clone(),
             data: opts.data.clone(),
+            roots: opts.roots.clone(),
             // cfg: opts.cfg.clone(),
         };
         return opts;
@@ -1115,6 +1286,20 @@ impl ToTokens for Opts<Module<'static>> {
     }
 }
 pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
+    // let mut opts = opts.clone();
+    // let is = if opts.flags.contains(Flags::PIT) {
+    //     pit_patch::get_interfaces(&opts.module)
+    //         .unwrap()
+    //         .into_iter()
+    //         .collect::<BTreeSet<_>>()
+    // } else {
+    //     Default::default()
+    // };
+    // if opts.flags.contains(Flags::PIT) {
+    //     for x in is.iter() {
+    //         pit_patch::canon::canon(&mut opts.module, &x.rid_str(), PIT_NS).unwrap();
+    //     }
+    // }
     // let mut module = waffle::Module::from_wasm_bytes(&opts.module, &Default::default()).unwrap();
     // module.expand_all_funcs().unwrap();
     // let mut module = module.without_orig_bytes();
@@ -1135,6 +1320,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
     let funcs = opts.module.funcs.iter().map(|a| opts.render_fn(a));
     let mut z = vec![];
     let mut fields = vec![];
+    let mut sfields = vec![];
     let mut fs = vec![];
     fs.push(opts.embed.clone());
     for (k, v) in opts.data.iter() {
@@ -1142,6 +1328,13 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
         z.push(quote! {
             #k : #v
         });
+    }
+    if (opts.flags.contains(Flags::BIND)) {
+        let k = format_ident!("rust_table");
+        fields.push(k.clone());
+        z.push(quote! {
+            #k: ::std::collections::BTreeMap<u32,AnyCell>,
+        })
     }
     let mut init = vec![];
     for (t, d) in opts.module.tables.entries() {
@@ -1151,6 +1344,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
             #n: Vec<#{opts.fp()}::Value<Target>>
         });
         fields.push(n.clone());
+        sfields.push(n.clone());
         if let Some(e) = d.func_elements.as_ref() {
             let e = e.iter().map(|x| opts.render_fun_ref(&quote! {C}, *x));
             init.push(if opts.flags.contains(Flags::ASYNC) {
@@ -1177,6 +1371,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
             #n : #t
         });
         fields.push(n.clone());
+        sfields.push(n.clone());
         fs.push(quote! {
             fn #n<'a>(&'a mut self) -> &'a mut #t{
                 return &mut self.data().#n;
@@ -1208,32 +1403,50 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
         let n = Ident::new(&me.to_string(), Span::call_site());
         match import {
             None => {
+                let mut t = quote! {
+                    Vec<u8>
+                };
+                if d.shared {
+                    t = quote! {
+                        ::std::sync::Arc<::std::lock::Mutex<#t>>
+                    };
+                };
                 z.push(quote! {
-                    #n : Vec<u8>
+                    #n : #t
                 });
                 fields.push(n.clone());
                 fs.push(quote! {
-                    fn #n<'a>(&'a mut self) -> &'a mut Vec<u8>{
+                    fn #n<'a>(&'a mut self) -> &'a mut #t{
                         return &mut self.data().#n;
                     }
                 });
             }
             Some((a, b)) => {
                 if a == "!!unsafe" && b == "host" && opts.flags.contains(Flags::HOST_MEMORY) {
+                } else if (a == "wasi_snapshot_preview1" || a == "wasix_32v1")
+                    && b == "memory"
+                    && opts.flags.contains(Flags::WASIX)
+                {
+                } else if a.starts_with("pit") && opts.flags.contains(Flags::PIT) {
                 } else {
                     // let a = bindname(&a);
                     // let b = bindname(&b);
                     let m = Ident::new(&format!("{a}_{b}"), Span::call_site());
-                    let p = if opts.flags.contains(Flags::LEGACY) {
-                        quote! {dyn #root::Memory}
+                    let mut p = if opts.flags.contains(Flags::LEGACY) {
+                        quote! {dyn #root::Memory + 'a}
                     } else {
                         quote! {
-                            impl #root::Memory
+                            impl #root::Memory + 'a
                         }
                     };
+                    if d.shared {
+                        p = quote! {
+                            ::std::sync::Arc<::std::lock::Mutex<#p>>
+                        };
+                    };
                     fs.push(quote! {
-                        fn #m<'a>(&'a mut self) -> &'a mut #p;
-                        fn #n<'a>(&'a mut self) -> &'a mut #p{
+                        fn #m<'a>(&'a mut self) -> &'a mut (#p);
+                        fn #n<'a>(&'a mut self) -> &'a mut (#p){
                             return self.#m();
                         }
                     });
@@ -1242,8 +1455,9 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
         }
         let pk = d.initial_pages * 65536;
         init.push(quote! {
-            let l = #pk.max(ctx.#n().len());
-            ctx.#n().resize(l,0);
+            let l = #pk.max(ctx.#n().size()?);
+            let s = ctx.#n().size()?;
+            ctx.#n().grow(l - s)?;
         });
         for s in d.segments.clone() {
             for (i, d) in s.data.chunks(65536).enumerate() {
@@ -1260,22 +1474,22 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                 // let out_str = out.to_str().unwrap().to_owned();
                 // eprintln!("emuitting data");
                 init.push(quote! {
-                    ctx.#n()[#o..#pk].copy_from_slice(&[#(#d),*])
+                    ctx.#n().write(#o,&[#(#d),*])?
                 });
             }
         }
     }
     for xp in opts.module.exports.iter() {
-        let xp = Export{
+        let xp = Export {
             name: bindname(&xp.name),
-            kind: xp.kind.clone()
+            kind: xp.kind.clone(),
         };
         match &xp.kind {
             ExportKind::Func(f) => {
                 let f = *f;
                 let d = opts.render_self_sig(
                     format_ident!("{}", xp.name),
-                    format_ident!("{f}"),
+                    opts.fname(f),
                     &opts.module.signatures[opts.module.funcs[f].sig()],
                 );
                 fs.push(quote! {
@@ -1310,13 +1524,21 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                 let x = Ident::new(&m.to_string(), Span::call_site());
                 let mn = Ident::new(&xp.name, Span::call_site());
                 let i = quasiquote! {
-                    fn #mn(&mut self) -> &mut #{if opts.flags.contains(Flags::LEGACY) {
-                        quote! {dyn #root::Memory}
-                    } else {
-                        quote! {
-                            impl #root::Memory
-                        }
-                    }}{
+                    fn #mn<'a>(&'a mut self) -> &'a mut (#{
+                        let mut p = if opts.flags.contains(Flags::LEGACY) {
+                            quote! {dyn #root::Memory + 'a}
+                        } else {
+                            quote! {
+                                impl #root::Memory + 'a
+                            }
+                        };
+                        if opts.module.memories[*m].shared{
+                            p = quote!{
+                                ::std::sync::Arc<::std::lock::Mutex<#p>>
+                            };
+                        };
+                        p
+                    }){
                         return self.#x()
                     }
                 };
@@ -1327,6 +1549,21 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
     for i in opts.module.imports.iter() {
         if i.module.starts_with(INTRINSIC) {
             continue;
+        }
+        if opts.flags.contains(Flags::WASIX) {
+            if i.module == "wasi_snapshot_preview1" || i.module == "wasix_32v1" {
+                continue;
+            }
+        }
+        if opts.flags.contains(Flags::BIND) {
+            if i.module == "wars/bind" {
+                continue;
+            }
+        }
+        if opts.flags.contains(Flags::PIT) {
+            if i.module.starts_with("pit") {
+                continue;
+            }
         }
         if let ImportKind::Func(f) = &i.kind {
             let name = format_ident!("{}_{}", bindname(&i.module), bindname(&i.name));
@@ -1370,6 +1607,8 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
     quasiquote! {
         mod #internal_path{
             #(#funcs)*
+            use #root::Memory;
+            use #root::AnyCell;
             pub fn alloc<T>(m: &mut ::std::collections::BTreeMap<u32,T>, x: T) -> u32{
                 let mut u = 0;
                 while m.contains_key(&u){
@@ -1381,11 +1620,38 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
             pub struct #data<Target: #name + ?Sized>{
                 #(#z),*
             }
-            pub trait #name: #{opts.fp()}::CtxSpec #{if opts.flags.contains(Flags::ASYNC){
+            impl<Target: #name + ?Sized> #root::Traverse<Target> for #data<Target>{
+                fn traverse<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Target::ExternRef> + 'a>{
+                    return #{
+                        let x = sfields.iter().map(|a|quote!{#root::Traverse::<Target>::traverse(&self.#a)});
+                        quote!{
+                            Box::new(::std::iter::empty()#(.chain(#x))*)
+                        }
+                    }
+                }
+                fn traverse_mut<'a>(&'a mut self) -> Box<dyn Iterator<Item = &'a mut Target::ExternRef> + 'a>{
+                    return #{
+                        let x = sfields.iter().map(|a|quote!{#root::Traverse::<Target>::traverse_mut(&mut self.#a)});
+                        quote!{
+                            Box::new(::std::iter::empty()#(.chain(#x))*)
+                        }
+                    }
+                }
+            }
+            pub trait #name: #{opts.fp()}::CtxSpec<ExternRef = Self::_ExternRef> #{if opts.flags.contains(Flags::ASYNC){
                 quote! {+ Send + Sync}
             }else{
                 quote! {}
+            }} #{if opts.flags.contains(Flags::WASIX){
+                quote!{+ #root::wasix::XSpec}
+            }else{
+                quote! {}
             }}{
+                type _ExternRef: Clone #{if opts.flags.contains(Flags::PIT){
+                    quote!{+ From<#root::Pit<Vec<#{opts.fp()}::Value<Self>>>> + TryInto<#root::Pit<Vec<#{opts.fp()}::Value<Self>>>>}
+                }else{
+                    quote!{}
+                }};
                 fn data(&mut self) -> &mut #data<Self>;
                 #(#fs)*
 

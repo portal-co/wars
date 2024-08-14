@@ -9,8 +9,13 @@ edition = "2021"
 anyhow = "1.0.86"
 castaway = "0.2.2"
 derive_more = "0.99.17"
+either = "1.13.0"
+ic-stable-structures = { version = "0.6.5", optional = true }
 paste = "1.0.15"
 tramp = "0.3.0"
 tuple_list = "0.1.3"
 wars-macro = { version = "0.1.0", path = "../wars-macro" }
 wasm_runtime_layer = "0.4.0"
+
+[features]
+ic-stable-structures = ["dep:ic-stable-structures"]

@@ -14,6 +14,7 @@ struct O {
     pub flags: Flags,
     pub embed: proc_macro2::TokenStream,
     pub data: BTreeMap<Ident, proc_macro2::TokenStream>, // pub cfg: Arc<dyn ImportCfg>,
+    pub roots: BTreeMap<String, proc_macro2::TokenStream>,
 }
 // struct NoopCfg {}
 // impl ImportCfg for NoopCfg {
@@ -32,6 +33,7 @@ impl Parse for O {
             flags: Default::default(),
             embed: Default::default(),
             data: BTreeMap::new(),
+            roots: BTreeMap::new(),
             // cfg: Arc::new(NoopCfg {}),
         };
         while input.lookahead1().peek(Ident) {
@@ -80,7 +82,20 @@ impl Parse for O {
                         o.flags &= Flags::LEGACY.complement();
                     }
                 }
-                _ => return Err(syn::Error::new(i.span(), "unexpected type")),
+                _ => {
+                    match i
+                        .to_string()
+                        .as_str()
+                        .strip_suffix("_path")
+                        .map(|a| a.to_owned())
+                    {
+                        None => return Err(syn::Error::new(i.span(), "unexpected type")),
+                        Some(a) => {
+                            let s: syn::LitStr = input.parse()?;
+                            o.roots.insert(a, s.parse()?);
+                        }
+                    }
+                }
             };
             let _comma: Token![,] = input.parse()?;
         }
@@ -102,6 +117,7 @@ pub fn wars(a: TokenStream) -> TokenStream {
             flags: o.flags,
             embed: o.embed,
             data: o.data,
+            roots: o.roots,
             // cfg: o.cfg,
         }
         .to_mod(),

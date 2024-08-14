@@ -1,14 +1,16 @@
-use std::sync::Arc;
+use std::{
+    iter::{empty, once},
+    sync::Arc,
+};
 
 use anyhow::Context;
 use tramp::{tramp, BorrowRec, Thunk};
 pub mod unsync;
-pub fn ret<'a,T>(a: T) -> BorrowRec<'a,T>{
+pub fn ret<'a, T>(a: T) -> BorrowRec<'a, T> {
     BorrowRec::Ret(a)
 }
-pub trait CtxSpec: Sized {
-    type ExternRef: Clone;
-}
+pub use crate::CtxSpec;
+use crate::Traverse;
 pub enum Value<C: CtxSpec> {
     I32(u32),
     I64(u64),
@@ -20,15 +22,34 @@ pub enum Value<C: CtxSpec> {
                     &'a mut C,
                     Vec<Value<C>>,
                 ) -> tramp::BorrowRec<'a, anyhow::Result<Vec<Value<C>>>>
-                + Send + Sync + 'static,
+                + Send
+                + Sync
+                + 'static,
         >,
     ),
     Null,
     ExRef(C::ExternRef),
 }
+impl<C: CtxSpec> Traverse<C> for Value<C> {
+    fn traverse<'a>(&'a self) -> Box<dyn Iterator<Item = &'a <C as CtxSpec>::ExternRef> + 'a> {
+        match self {
+            Value::ExRef(e) => Box::new(once(e)),
+            _ => Box::new(empty()),
+        }
+    }
+
+    fn traverse_mut<'a>(
+        &'a mut self,
+    ) -> Box<dyn Iterator<Item = &'a mut <C as CtxSpec>::ExternRef> + 'a> {
+        match self {
+            Value::ExRef(e) => Box::new(once(e)),
+            _ => Box::new(empty()),
+        }
+    }
+}
 pub fn call_ref<'a, A: CoeVec<C> + 'static, B: CoeVec<C> + 'static, C: CtxSpec + 'static>(
     ctx: &'a mut C,
-    go: Df<A,B,C>,
+    go: Df<A, B, C>,
     a: A,
 ) -> tramp::BorrowRec<'a, anyhow::Result<B>> {
     // let go: Df<A, B, C> = cast(go);
@@ -143,8 +164,9 @@ pub fn map_rec<'a, T: 'a, U>(
         })),
     }
 }
-pub type Df<A, B, C> =
-    Arc<dyn for<'a> Fn(&'a mut C, A) -> tramp::BorrowRec<'a, anyhow::Result<B>> + Send + Sync + 'static>;
+pub type Df<A, B, C> = Arc<
+    dyn for<'a> Fn(&'a mut C, A) -> tramp::BorrowRec<'a, anyhow::Result<B>> + Send + Sync + 'static,
+>;
 
 pub fn da<
     A,
@@ -153,7 +175,7 @@ pub fn da<
     F: for<'a> Fn(&'a mut C, A) -> tramp::BorrowRec<'a, anyhow::Result<B>> + Send + Sync + 'static,
 >(
     f: F,
-) -> Df<A,B,C> {
+) -> Df<A, B, C> {
     Arc::new(f)
 }
 
@@ -165,6 +187,8 @@ impl<C: CtxSpec + 'static, A: CoeVec<C> + 'static, B: CoeVec<C> + 'static> Coe<C
                     &'a mut C,
                     Vec<Value<C>>,
                 ) -> tramp::BorrowRec<'a, anyhow::Result<Vec<Value<C>>>>
+                + Send
+                + Sync
                 + 'static,
         >(
             a: T,

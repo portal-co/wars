@@ -3,7 +3,4 @@ wars_macro::wars!(
     r#async = true,
 );
 
-fn x<A: Wars>(){
-
-}
-
+fn x<A: Wars>() {}
