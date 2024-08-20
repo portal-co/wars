@@ -606,7 +606,7 @@ impl Opts<Module<'static>> {
                                 },
                                 Operator::CallRef { sig_index } => {
                                     let mut vals = vals.to_owned();
-                                    let r = vals.pop().unwrap();
+                                    let r = vals.pop().expect(" a ref to call");
                                         // let func = format_ident!("{function_index}");
                                         let vals = vals.iter().map(|a|format_ident!("{a}"));
                                         let r = format_ident!("{r}");
@@ -632,7 +632,7 @@ impl Opts<Module<'static>> {
                                 Operator::CallIndirect { sig_index, table_index } => {
                                     let t = format_ident!("{table_index}");
                                     let mut vals = vals.to_owned();
-                                    let r = vals.pop().unwrap();
+                                    let r = vals.pop().expect("a table index to call");
                                         // let func = format_ident!("{function_index}");
                                         let vals = vals.iter().map(|a|format_ident!("{a}"));
                                         let r = format_ident!("{r}");
@@ -705,10 +705,16 @@ impl Opts<Module<'static>> {
                                     let dst_ptr = format_ident!("{}",vals[0].to_string());
                                     let src_ptr = format_ident!("{}",vals[1].to_string());
                                     let len = format_ident!("{}",vals[2].to_string());
-                                    quote!{
+                                    quasiquote!{
                                         {
-                                            let m = #src.read(#src_ptr as u64,#len as u64)?.as_ref().as_ref().to_owned();
-                                            #dst.write(#dst_ptr as u64,&m)?;
+                                            let m = match #src.read(#src_ptr as u64,#len as u64){
+                                                Ok(a) => a,
+                                                Err(e) => return #{self.fp()}::ret(Err(e))
+                                            }.as_ref().as_ref().to_owned();
+                                            match #dst.write(#dst_ptr as u64,&m){
+                                                Ok(a) => a,
+                                                Err(e) => return #{self.fp()}::ret(Err(e))
+                                            };
                                         ()
                                         }
                                     }
@@ -786,7 +792,7 @@ impl Opts<Module<'static>> {
                                         Ok::<(),Infallible>(())
                                     }).unwrap();
                                     // let clean = o.to_string();
-                                    let clean = format_ident!("{}",o.to_string().split_once("<").unwrap().0);
+                                    let clean = format_ident!("{}",o.to_string().split_once("<").expect("a memory op").0);
                                     let m2 = mem;
                                     let mem = self.mem(m2);
                                     let mut vals = vals.iter().map(|a|format_ident!("{a}"));
@@ -795,14 +801,14 @@ impl Opts<Module<'static>> {
                                     }else{
                                         quote! {u32}
                                     };
-                                    let offset = waffle::op_traits::memory_arg(o).unwrap().offset;
+                                    let offset = waffle::op_traits::memory_arg(o).expect("a memory arg").offset;
                                     let offset =  if self.module.memories[m2].memory64{
                                         quote! {#offset}
                                     } else{
                                         let offset = offset as u32;
                                         quote! {#offset}
                                     };
-                                    let val = vals.next().unwrap();
+                                    let val = vals.next().expect("the runtime memory offset");
                                     let vals = once(quote! {(#val.clone() + #offset)}).chain(vals.map(|w|quote!{#w}));
                                     quasiquote! {
                                         match #root::#clean::<#rt,_>(#mem,#(#fp::cast::<_,_,C>(#vals .clone())),*){
@@ -987,7 +993,7 @@ impl Opts<Module<'static>> {
                     waffle::Terminator::ReturnCallIndirect { sig, table, args } => {
                         let t = format_ident!("{table}");
                         let mut vals = args.to_owned();
-                        let r = vals.pop().unwrap();
+                        let r = vals.pop().expect("a table index to call");
                         // let func = format_ident!("{function_index}");
                         let vals = vals.iter().map(|a| format_ident!("{a}")).map(|a| {
                             quasiquote! {
@@ -1014,7 +1020,7 @@ impl Opts<Module<'static>> {
                     }
                     waffle::Terminator::ReturnCallRef { sig, args } => {
                         let mut vals = args.clone();
-                        let r = vals.pop().unwrap();
+                        let r = vals.pop().expect(" a ref to call");
                         // let func = format_ident!("{function_index}");
                         let vals = vals.iter().map(|a| format_ident!("{a}")).map(|a| {
                             quasiquote! {
