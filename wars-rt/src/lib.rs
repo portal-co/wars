@@ -215,6 +215,9 @@ macro_rules! int_ty{
             pub fn [<$p divu>](a: $int, b: $int) -> anyhow::Result<tuple_list::tuple_list_type!($int)> {
                 Ok(tuple_list::tuple_list!(a / b))
             }
+            pub fn [<$p divs>](a: $int, b: $int) -> anyhow::Result<tuple_list::tuple_list_type!($int)> {
+                Ok(tuple_list::tuple_list!(((a as $p) / (b as $p)) as $int))
+            }
             pub fn [<$p rotl>](a: $int, b: $int) -> anyhow::Result<tuple_list::tuple_list_type!($int)> {
                 Ok(tuple_list::tuple_list!(a.rotate_left((b & 0xffffffff) as u32)))
             }
@@ -384,6 +387,9 @@ pub fn select<T>(u: u32, t: T, t2: T) -> anyhow::Result<tuple_list::tuple_list_t
 pub fn i32wrapi64(a: u64) -> anyhow::Result<tuple_list::tuple_list_type!(u32)> {
     return Ok(tuple_list::tuple_list!((a & 0xffffffff) as u32));
 }
-pub fn i64extend132u(a: u32) -> anyhow::Result<tuple_list::tuple_list_type!(u64)> {
+pub fn i64extendi32u(a: u32) -> anyhow::Result<tuple_list::tuple_list_type!(u64)> {
     Ok(tuple_list::tuple_list!(a as u64))
+}
+pub fn i64extendi32s(a: u32) -> anyhow::Result<tuple_list::tuple_list_type!(u64)> {
+    Ok(tuple_list::tuple_list!(a as i32 as i64 as u64))
 }
