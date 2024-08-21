@@ -727,7 +727,7 @@ impl Opts<Module<'static>> {
                                     let len = format_ident!("{}",vals[2].to_string());
                                     quasiquote!{
                                         {
-                                            let m = vec![(#val & 0xff) as u8; #len as u64];
+                                            let m = vec![(#val & 0xff) as u8; #len as usize];
                                             match #dst.write(#dst_ptr as u64,&m){
                                                 Ok(a) => a,
                                                 Err(e) => return #{self.fp()}::ret(Err(e))
