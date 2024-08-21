@@ -316,7 +316,7 @@ impl Opts<Module<'static>> {
         };
         let id = format_ident!("{}_{}", bindname(module), bindname(name));
         return quote! {
-            ctx.#id(#root::tuple_list::tuple_list!(#(#params),*))
+            ctx.#id(#root::_rexport::tuple_list::tuple_list!(#(#params),*))
         };
     }
     pub fn render_ty(&self, ctx: &TokenStream, ty: Type) -> TokenStream {
@@ -461,11 +461,11 @@ impl Opts<Module<'static>> {
         let returns = data.returns.iter().map(|x| self.render_ty(&ctx, *x));
         if self.flags.contains(Flags::ASYNC) {
             quote! {
-                fn #name<'a>(self: &'a mut Self, #root::_rexport::tuple_list::tuple_list!(#(#param_ids),*): #root::_rexport::tuple_list::tuple_list_type!(#(#params),*)) -> #root::func::unsync::AsyncRec<'a,#root::_rexport::anyhow::Result<#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)>>;
+                fn #name<'a>(self: &'a mut Self, imp: #root::_rexport::tuple_list::tuple_list_type!(#(#params),*)) -> #root::func::unsync::AsyncRec<'a,#root::_rexport::anyhow::Result<#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)>>;
             }
         } else {
             quote! {
-                fn #name<'a>(self: &'a mut Self, #root::_rexport::tuple_list::tuple_list!(#(#param_ids),*): #root::_rexport::tuple_list::tuple_list_type!(#(#params),*)) -> #root::_rexport::tramp::BorrowRec<'a,#root::_rexport::anyhow::Result<#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)>>;
+                fn #name<'a>(self: &'a mut Self, imp: #root::_rexport::tuple_list::tuple_list_type!(#(#params),*)) -> #root::_rexport::tramp::BorrowRec<'a,#root::_rexport::anyhow::Result<#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)>>;
             }
         }
     }

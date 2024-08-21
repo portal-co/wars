@@ -402,3 +402,6 @@ pub fn i64extendi32u(a: u32) -> anyhow::Result<tuple_list::tuple_list_type!(u64)
 pub fn i64extendi32s(a: u32) -> anyhow::Result<tuple_list::tuple_list_type!(u64)> {
     Ok(tuple_list::tuple_list!(a as i32 as i64 as u64))
 }
+pub fn i64truncf64s(a: f64) -> anyhow::Result<tuple_list::tuple_list_type!(u64)>{
+    Ok(tuple_list::tuple_list!(unsafe{a.trunc().to_int_unchecked::<i64>()} as u64))
+}
