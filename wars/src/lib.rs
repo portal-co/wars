@@ -316,7 +316,7 @@ impl Opts<Module<'static>> {
         };
         let id = format_ident!("{}_{}", bindname(module), bindname(name));
         return quote! {
-            ctx.#id(#(#params),*)
+            ctx.#id(#root::tuple_list::tuple_list!(#(#params),*))
         };
     }
     pub fn render_ty(&self, ctx: &TokenStream, ty: Type) -> TokenStream {
