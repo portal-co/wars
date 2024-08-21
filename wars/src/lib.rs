@@ -1478,6 +1478,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
             }
         }
         let pk = d.initial_pages * 65536;
+        let pk = pk as u64;
         init.push(quote! {
             let l = #pk.max(ctx.#n().size()?);
             let s = ctx.#n().size()?;
@@ -1488,6 +1489,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                 let o = s.offset + i * 65536;
                 let pk = o + d.len();
                 let pk = pk + 1;
+                let o = o as u64;
                 // let mut out = out_dir();
                 // let mut h = ::sha3::Sha3_256::new();
                 // h.update(&p);
