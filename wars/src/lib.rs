@@ -790,7 +790,7 @@ impl Opts<Module<'static>> {
                                     waffle::op_traits::rewrite_mem(&mut o.clone(), &mut [();4], |m,_|{
                                         mem = *m;
                                         Ok::<(),Infallible>(())
-                                    }).unwrap();
+                                    }).expect("wut");
                                     // let clean = o.to_string();
                                     let clean = format_ident!("{}",o.to_string().split_once("<").expect("a memory op").0);
                                     let m2 = mem;
