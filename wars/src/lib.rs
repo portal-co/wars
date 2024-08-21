@@ -719,6 +719,23 @@ impl Opts<Module<'static>> {
                                         }
                                     }
                                 },
+                                waffle::Operator::MemoryFill { mem } => {
+                                    let dst = self.mem(*mem);
+                                    // let src = self.mem(*src_mem);
+                                    let dst_ptr = format_ident!("{}",vals[0].to_string());
+                                    let val = format_ident!("{}",vals[1].to_string());
+                                    let len = format_ident!("{}",vals[2].to_string());
+                                    quasiquote!{
+                                        {
+                                            let m = vec![(#val & 0xff) as u8; #len as u64];
+                                            match #dst.write(#dst_ptr as u64,&m){
+                                                Ok(a) => a,
+                                                Err(e) => return #{self.fp()}::ret(Err(e))
+                                            };
+                                        ()
+                                        }
+                                    }
+                                },
                                 waffle::Operator::GlobalGet { global_index } => {
                                     let g = Ident::new(&global_index.to_string(), Span::call_site());
                                     quote!{
