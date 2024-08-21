@@ -212,11 +212,20 @@ macro_rules! int_ty{
             pub fn [<$p shru>](a: $int, b: $int) -> anyhow::Result<tuple_list::tuple_list_type!($int)> {
                 Ok(tuple_list::tuple_list!(a >> b))
             }
+            pub fn [<$p shrs>](a: $int, b: $int) -> anyhow::Result<tuple_list::tuple_list_type!($int)> {
+                Ok(tuple_list::tuple_list!(((a as $p) >> b) as $int))
+            }
             pub fn [<$p divu>](a: $int, b: $int) -> anyhow::Result<tuple_list::tuple_list_type!($int)> {
                 Ok(tuple_list::tuple_list!(a / b))
             }
             pub fn [<$p divs>](a: $int, b: $int) -> anyhow::Result<tuple_list::tuple_list_type!($int)> {
                 Ok(tuple_list::tuple_list!(((a as $p) / (b as $p)) as $int))
+            }
+            pub fn [<$p remu>](a: $int, b: $int) -> anyhow::Result<tuple_list::tuple_list_type!($int)> {
+                Ok(tuple_list::tuple_list!(a % b))
+            }
+            pub fn [<$p rems>](a: $int, b: $int) -> anyhow::Result<tuple_list::tuple_list_type!($int)> {
+                Ok(tuple_list::tuple_list!(((a as $p) % (b as $p)) as $int))
             }
             pub fn [<$p rotl>](a: $int, b: $int) -> anyhow::Result<tuple_list::tuple_list_type!($int)> {
                 Ok(tuple_list::tuple_list!(a.rotate_left((b & 0xffffffff) as u32)))
