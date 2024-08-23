@@ -1,9 +1,14 @@
-use std::{
+use alloc::{
+    sync::Arc,
+    boxed::Box,
+    vec::Vec,
+};
+use core::{
     future::Future,
     iter::{empty, once},
     pin::Pin,
-    sync::Arc,
 };
+use alloc::vec;
 
 use anyhow::Context;
 // use tramp::{tramp, BorrowRec, Thunk};

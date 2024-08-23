@@ -955,7 +955,7 @@ impl Opts<Module<'static>> {
                             }
                             None => {
                                 quote! {
-                                    ::std::default::Default::default()
+                                    ::core::default::Default::default()
                                 }
                             }
                         });
@@ -1357,7 +1357,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
         let k = format_ident!("rust_table");
         fields.push(k.clone());
         z.push(quote! {
-            #k: ::std::collections::BTreeMap<u32,AnyCell>,
+            #k: ::alloc::collections::BTreeMap<u32,AnyCell>,
         })
     }
     let mut init = vec![];
@@ -1432,7 +1432,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                 };
                 if d.shared {
                     t = quote! {
-                        ::std::sync::Arc<::std::lock::Mutex<#t>>
+                        ::alloc::sync::Arc<#root::Mutex<#t>>
                     };
                 };
                 z.push(quote! {
@@ -1465,7 +1465,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                     };
                     if d.shared {
                         p = quote! {
-                            ::std::sync::Arc<::std::lock::Mutex<#p>>
+                            ::alloc::sync::Arc<#root::Mutex<#p>>
                         };
                     };
                     fs.push(quote! {
@@ -1560,7 +1560,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                         };
                         if opts.module.memories[*m].shared{
                             p = quote!{
-                                ::std::sync::Arc<::std::lock::Mutex<#p>>
+                                ::alloc::sync::Arc<#root::Mutex<#p>>
                             };
                         };
                         p
@@ -1634,8 +1634,10 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
         mod #internal_path{
             #(#funcs)*
             use #root::Memory;
-            use #root::AnyCell;
-            pub fn alloc<T>(m: &mut ::std::collections::BTreeMap<u32,T>, x: T) -> u32{
+            use ::alloc::vec::Vec;
+            use ::alloc::boxed::Box;
+            use ::alloc::vec;
+            pub fn alloc<T>(m: &mut ::alloc::collections::BTreeMap<u32,T>, x: T) -> u32{
                 let mut u = 0;
                 while m.contains_key(&u){
                     u += 1;
@@ -1651,7 +1653,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                     return #{
                         let x = sfields.iter().map(|a|quote!{#root::Traverse::<Target>::traverse(&self.#a)});
                         quote!{
-                            Box::new(::std::iter::empty()#(.chain(#x))*)
+                            Box::new(::core::iter::empty()#(.chain(#x))*)
                         }
                     }
                 }
@@ -1659,7 +1661,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                     return #{
                         let x = sfields.iter().map(|a|quote!{#root::Traverse::<Target>::traverse_mut(&mut self.#a)});
                         quote!{
-                            Box::new(::std::iter::empty()#(.chain(#x))*)
+                            Box::new(::core::iter::empty()#(.chain(#x))*)
                         }
                     }
                 }

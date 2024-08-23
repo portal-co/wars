@@ -1,20 +1,33 @@
+#![no_std]
+extern crate alloc;
+
 pub mod func;
 pub mod wasix;
-pub mod wrl;
-use std::{
+use core::{
     iter::empty,
-    sync::{Arc, Mutex},
 };
-pub type AnyCell = ::std::sync::Arc<::std::cell::UnsafeCell<Box<dyn ::std::any::Any>>>;
-pub fn any_cell<T: ::std::any::Any>(a: T) -> AnyCell{
-    return ::std::sync::Arc::new(::std::cell::UnsafeCell::new(Box::new(a)));
+use alloc::{
+    sync::{Arc},
+    boxed::Box,
+    vec::Vec
+};
+
+#[cfg(feature = "std")]
+pub use std::sync::Mutex as Mutex;
+
+#[cfg(not(feature = "std"))]
+pub use spin::Mutex as Mutex;
+
+pub trait Err: Into<anyhow::Error>{
+
 }
-pub unsafe fn get_cell<T: ::std::any::Any>(a: &AnyCell) -> Option<&mut T>{
-    let r = unsafe{
-        &mut *a.get()
-    };
-    return r.downcast_mut();
+impl<T: Into<anyhow::Error>> Err for T{
+    
 }
+
+#[cfg(feature = "std")]
+extern crate std;
+
 #[derive(Clone)]
 pub struct Pit<X>{
     pub id: [u8; 32],
@@ -72,6 +85,8 @@ pub trait Memory {
 }
 #[cfg(feature = "ic-stable-structures")]
 pub mod ic{
+    use alloc::{boxed::Box, vec};
+
     #[repr(transparent)]
     pub struct Stable<T>(pub T);
 
@@ -136,7 +151,8 @@ impl<T: Memory + ?Sized> Memory for Box<T> {
         self.as_mut().grow(x)
     }
 }
-impl<T: Memory> Memory for Arc<Mutex<T>> {
+#[cfg(feature = "std")]
+impl<T: Memory> Memory for Arc<std::sync::Mutex<T>> {
     fn read<'a>(&'a self, a: u64, s: u64) -> anyhow::Result<Box<dyn AsRef<[u8]> + 'a>> {
         let l = self.lock().unwrap();
         let r = l.read(a, s)?;
@@ -158,17 +174,40 @@ impl<T: Memory> Memory for Arc<Mutex<T>> {
         return l.grow(x);
     }
 }
+#[cfg(not(feature = "std"))]
+impl<T: Memory> Memory for Arc<spin::Mutex<T>> {
+    fn read<'a>(&'a self, a: u64, s: u64) -> anyhow::Result<Box<dyn AsRef<[u8]> + 'a>> {
+        let l = self.lock();
+        let r = l.read(a, s)?;
+        return Ok(Box::new(r.as_ref().as_ref().to_vec()));
+    }
+
+    fn write(&mut self, a: u64, x: &[u8]) -> anyhow::Result<()> {
+        let mut l = self.lock();
+        return l.write(a, x);
+    }
+
+    fn size(&self) -> Result<u64, anyhow::Error> {
+        let l = self.lock();
+        return l.size();
+    }
+
+    fn grow(&mut self, x: u64) -> anyhow::Result<()> {
+        let mut l = self.lock();
+        return l.grow(x);
+    }
+}
 pub unsafe fn host_memory() -> impl Memory {
     struct W {}
     impl Memory for W {
         fn read<'a>(&'a self, a: u64, s: u64) -> anyhow::Result<Box<dyn AsRef<[u8]> + 'a>> {
             return Ok(Box::new(unsafe {
-                std::slice::from_raw_parts(a as usize as *const u8, s as usize)
+                core::slice::from_raw_parts(a as usize as *const u8, s as usize)
             }));
         }
 
         fn write(&mut self, a: u64, x: &[u8]) -> anyhow::Result<()> {
-            let n = unsafe { std::slice::from_raw_parts_mut(a as usize as *mut u8, x.len()) };
+            let n = unsafe { core::slice::from_raw_parts_mut(a as usize as *mut u8, x.len()) };
             n.copy_from_slice(x);
             return Ok(());
         }
@@ -328,61 +367,61 @@ macro_rules! int_ty{
                 Ok(tuple_list::tuple_list!(a.wrapping_sub(b)))
             }
             //LOADS and STORES
-            pub fn [<$p load>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T) -> anyhow::Result<tuple_list::tuple_list_type!($int)> where T::Error: std::error::Error + Send + Sync + 'static{
-                let r = a.read(b.try_into()?,std::mem::size_of::<$int>().try_into()?)?;
+            pub fn [<$p load>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T) -> anyhow::Result<tuple_list::tuple_list_type!($int)> where T::Error: Err + Send + Sync + 'static{
+                let r = a.read(b.try_into().map_err(Into::into)?,core::mem::size_of::<$int>().try_into()?)?;
                 Ok(tuple_list::tuple_list!($int::from_ne_bytes(r.as_ref().as_ref().try_into()?)))
             }
-            pub fn [<$p store>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T, c: $int) -> anyhow::Result<()> where T::Error: std::error::Error + Send + Sync + 'static{
-                // let mut r = &mut a[b.try_into()?..][..std::mem::size_of::<$int>()];
+            pub fn [<$p store>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T, c: $int) -> anyhow::Result<()> where T::Error: Err + Send + Sync + 'static{
+                // let mut r = &mut a[b.try_into().map_err(Into::into)?..][..std::mem::size_of::<$int>()];
                 // r.copy_from_slice(&c.to_ne_bytes());
-                a.write(b.try_into()?,&c.to_ne_bytes())?;
+                a.write(b.try_into().map_err(Into::into)?,&c.to_ne_bytes())?;
                 Ok(())
             }
             //8 BIT
-            pub fn [<$p load8u>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T) -> anyhow::Result<tuple_list::tuple_list_type!($int)> where T::Error: std::error::Error + Send + Sync + 'static{
-                let r = a.read(b.try_into()?,1)?.as_ref().as_ref()[0];
+            pub fn [<$p load8u>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T) -> anyhow::Result<tuple_list::tuple_list_type!($int)> where T::Error: Err + Send + Sync + 'static{
+                let r = a.read(b.try_into().map_err(Into::into)?,1)?.as_ref().as_ref()[0];
                 Ok(tuple_list::tuple_list!(r as $int))
             }
-            pub fn [<$p load8s>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T) -> anyhow::Result<tuple_list::tuple_list_type!($int)> where T::Error: std::error::Error + Send + Sync + 'static{
-                let r = a.read(b.try_into()?,1)?.as_ref().as_ref()[0];
+            pub fn [<$p load8s>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T) -> anyhow::Result<tuple_list::tuple_list_type!($int)> where T::Error: Err + Send + Sync + 'static{
+                let r = a.read(b.try_into().map_err(Into::into)?,1)?.as_ref().as_ref()[0];
                 Ok(tuple_list::tuple_list!(r as i8 as $p as $int))
             }
-            pub fn [<$p store8>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T, c: $int) -> anyhow::Result<()> where T::Error: std::error::Error + Send + Sync + 'static{
-                // let mut r = &mut a[b.try_into()?..][..1];
+            pub fn [<$p store8>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T, c: $int) -> anyhow::Result<()> where T::Error: Err + Send + Sync + 'static{
+                // let mut r = &mut a[b.try_into().map_err(Into::into)?..][..1];
                 // r[0] = (c & 0xff) as u8;
-                a.write(b.try_into()?,&[(c & 0xff) as u8])?;
+                a.write(b.try_into().map_err(Into::into)?,&[(c & 0xff) as u8])?;
                 Ok(())
             }
             //16 BIT
-            pub fn [<$p load16u>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T) -> anyhow::Result<tuple_list::tuple_list_type!($int)> where T::Error: std::error::Error + Send + Sync + 'static{
-                let r = a.read(b.try_into()?,2)?;
+            pub fn [<$p load16u>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T) -> anyhow::Result<tuple_list::tuple_list_type!($int)> where T::Error: Err + Send + Sync + 'static{
+                let r = a.read(b.try_into().map_err(Into::into)?,2)?;
                 let r = u16::from_ne_bytes(r.as_ref().as_ref().try_into()?);
                 Ok(tuple_list::tuple_list!(r as $int))
             }
-            pub fn [<$p load16s>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T) -> anyhow::Result<tuple_list::tuple_list_type!($int)> where T::Error: std::error::Error + Send + Sync + 'static{
-                let r = a.read(b.try_into()?,2)?;
+            pub fn [<$p load16s>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T) -> anyhow::Result<tuple_list::tuple_list_type!($int)> where T::Error: Err + Send + Sync + 'static{
+                let r = a.read(b.try_into().map_err(Into::into)?,2)?;
                 let r = u16::from_ne_bytes(r.as_ref().as_ref().try_into()?);
                 Ok(tuple_list::tuple_list!(r as i16 as $p as $int))
             }
-            pub fn [<$p store16>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T, c: $int) -> anyhow::Result<()> where T::Error: std::error::Error + Send + Sync + 'static{
-                // let mut r = &mut a[b.try_into()?..][..2];
-                a.write(b.try_into()?,&((c & 0xffff) as u16).to_ne_bytes())?;
+            pub fn [<$p store16>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T, c: $int) -> anyhow::Result<()> where T::Error: Err + Send + Sync + 'static{
+                // let mut r = &mut a[b.try_into().map_err(Into::into)?..][..2];
+                a.write(b.try_into().map_err(Into::into)?,&((c & 0xffff) as u16).to_ne_bytes())?;
                 Ok(())
             }
             //32 BIT
-            pub fn [<$p load32u>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T) -> anyhow::Result<tuple_list::tuple_list_type!($int)> where T::Error: std::error::Error + Send + Sync + 'static{
-                let r = a.read(b.try_into()?,4)?;
+            pub fn [<$p load32u>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T) -> anyhow::Result<tuple_list::tuple_list_type!($int)> where T::Error: Err + Send + Sync + 'static{
+                let r = a.read(b.try_into().map_err(Into::into)?,4)?;
                 let r = u32::from_ne_bytes(r.as_ref().as_ref().try_into()?);
                 Ok(tuple_list::tuple_list!(r as $int))
             }
-            pub fn [<$p load32s>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T) -> anyhow::Result<tuple_list::tuple_list_type!($int)> where T::Error: std::error::Error + Send + Sync + 'static{
-                let r = a.read(b.try_into()?,4)?;
+            pub fn [<$p load32s>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T) -> anyhow::Result<tuple_list::tuple_list_type!($int)> where T::Error: Err + Send + Sync + 'static{
+                let r = a.read(b.try_into().map_err(Into::into)?,4)?;
                 let r = u32::from_ne_bytes(r.as_ref().as_ref().try_into()?);
                 Ok(tuple_list::tuple_list!(r as i32 as $p as $int))
             }
-            pub fn [<$p store32>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T, c: $int) -> anyhow::Result<()> where T::Error: std::error::Error + Send + Sync + 'static{
-                // let mut r = &mut a[b.try_into()?..][..4];
-                a.write(b.try_into()?,&((c & 0xffffffff) as u32).to_ne_bytes())?;
+            pub fn [<$p store32>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T, c: $int) -> anyhow::Result<()> where T::Error: Err + Send + Sync + 'static{
+                // let mut r = &mut a[b.try_into().map_err(Into::into)?..][..4];
+                a.write(b.try_into().map_err(Into::into)?,&((c & 0xffffffff) as u32).to_ne_bytes())?;
                 Ok(())
             }
         }
