@@ -15,7 +15,7 @@ either = "1.13.0"
 ic-stable-structures = { version = "0.6.5", optional = true }
 paste = "1.0.15"
 spin = "0.9.8"
-tramp = {git="https://github.com/portal-co/trampoline-rs.git",branch="master"}
+portal-pc-tramp = "0.3.0+portal"
 tuple_list = "0.1.3"
 wars-macro = { version = "0.1.0", path = "../wars-macro" }
 # wasm_runtime_layer = "0.4.0"

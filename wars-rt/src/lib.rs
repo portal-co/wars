@@ -357,8 +357,8 @@ macro_rules! int_ty{
             }
             //LOADS and STORES
             pub fn [<$p load>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T) -> anyhow::Result<tuple_list::tuple_list_type!($int)> where T::Error: Err + Send + Sync + 'static{
-                let r = a.read(b.try_into().map_err(Into::into)?,core::mem::size_of::<$int>().try_into()?)?;
-                Ok(tuple_list::tuple_list!($int::from_ne_bytes(r.as_ref().as_ref().try_into()?)))
+                let r = a.read(b.try_into().map_err(Into::into)?,core::mem::size_of::<$int>().try_into().unwrap())?;
+                Ok(tuple_list::tuple_list!($int::from_ne_bytes(r.as_ref().as_ref().try_into().unwrap())))
             }
             pub fn [<$p store>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T, c: $int) -> anyhow::Result<()> where T::Error: Err + Send + Sync + 'static{
                 // let mut r = &mut a[b.try_into().map_err(Into::into)?..][..std::mem::size_of::<$int>()];
@@ -384,12 +384,12 @@ macro_rules! int_ty{
             //16 BIT
             pub fn [<$p load16u>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T) -> anyhow::Result<tuple_list::tuple_list_type!($int)> where T::Error: Err + Send + Sync + 'static{
                 let r = a.read(b.try_into().map_err(Into::into)?,2)?;
-                let r = u16::from_ne_bytes(r.as_ref().as_ref().try_into()?);
+                let r = u16::from_ne_bytes(r.as_ref().as_ref().try_into().unwrap());
                 Ok(tuple_list::tuple_list!(r as $int))
             }
             pub fn [<$p load16s>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T) -> anyhow::Result<tuple_list::tuple_list_type!($int)> where T::Error: Err + Send + Sync + 'static{
                 let r = a.read(b.try_into().map_err(Into::into)?,2)?;
-                let r = u16::from_ne_bytes(r.as_ref().as_ref().try_into()?);
+                let r = u16::from_ne_bytes(r.as_ref().as_ref().try_into().unwrap());
                 Ok(tuple_list::tuple_list!(r as i16 as $p as $int))
             }
             pub fn [<$p store16>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T, c: $int) -> anyhow::Result<()> where T::Error: Err + Send + Sync + 'static{
@@ -400,12 +400,12 @@ macro_rules! int_ty{
             //32 BIT
             pub fn [<$p load32u>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T) -> anyhow::Result<tuple_list::tuple_list_type!($int)> where T::Error: Err + Send + Sync + 'static{
                 let r = a.read(b.try_into().map_err(Into::into)?,4)?;
-                let r = u32::from_ne_bytes(r.as_ref().as_ref().try_into()?);
+                let r = u32::from_ne_bytes(r.as_ref().as_ref().try_into().unwrap());
                 Ok(tuple_list::tuple_list!(r as $int))
             }
             pub fn [<$p load32s>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T) -> anyhow::Result<tuple_list::tuple_list_type!($int)> where T::Error: Err + Send + Sync + 'static{
                 let r = a.read(b.try_into().map_err(Into::into)?,4)?;
-                let r = u32::from_ne_bytes(r.as_ref().as_ref().try_into()?);
+                let r = u32::from_ne_bytes(r.as_ref().as_ref().try_into().unwrap());
                 Ok(tuple_list::tuple_list!(r as i32 as $p as $int))
             }
             pub fn [<$p store32>]<T: TryInto<u64>,M: Memory + ?Sized>(a: &mut M, b: T, c: $int) -> anyhow::Result<()> where T::Error: Err + Send + Sync + 'static{
