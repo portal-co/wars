@@ -126,7 +126,7 @@ pub fn wars(a: TokenStream) -> TokenStream {
             embed: o.embed,
             data: o.data,
             roots: o.roots,
-            tpit: Default::default(),
+            // tpit: Default::default(),
             // cfg: o.cfg,
         }
         .to_mod(),
