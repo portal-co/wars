@@ -1,7 +1,7 @@
 [workspace]
-members=["legacy-wars-core","legacy-wars","waffle-func-reloop", "wars", "wars-component", "wars-macro","wars-rt", "wars-test","isovariant", "wasm-compile-layer"]
+members=[ "wars",  "wars-macro","wars-rt", "wars-test","isovariant"]
 resolver="2"
 
 [workspace.dependencies]
 
-portal-pc-waffle = {git="https://github.com/portal-co/waffle-.git",branch="pr/changes2"}
+portal-pc-waffle = {version="0.0.29+portal"}

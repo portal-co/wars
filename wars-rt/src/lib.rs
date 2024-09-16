@@ -3,36 +3,25 @@ extern crate alloc;
 
 pub mod func;
 pub mod wasix;
-use core::{
-    iter::empty,
-};
-use alloc::{
-    sync::{Arc},
-    boxed::Box,
-    vec::Vec
-};
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
+use core::iter::empty;
 
 #[cfg(feature = "std")]
-pub use std::sync::Mutex as Mutex;
+pub use std::sync::Mutex;
 
 #[cfg(not(feature = "std"))]
-pub use spin::Mutex as Mutex;
+pub use spin::Mutex;
 
-pub trait Err: Into<anyhow::Error>{
-
-}
-impl<T: Into<anyhow::Error>> Err for T{
-    
-}
+pub trait Err: Into<anyhow::Error> {}
+impl<T: Into<anyhow::Error>> Err for T {}
 
 #[cfg(feature = "std")]
 extern crate std;
 
 #[derive(Clone)]
-pub struct Pit<X>{
-    pub id: [u8; 32],
-    pub x: X,
-    pub s: [u8;32],
+pub enum Pit<X, H> {
+    Guest { id: [u8; 32], x: X, s: [u8; 32] },
+    Host { host: H },
 }
 // use as_ref::AsSlice;
 // use func::CtxSpec;
@@ -84,31 +73,31 @@ pub trait Memory {
     fn grow(&mut self, x: u64) -> anyhow::Result<()>;
 }
 #[cfg(feature = "ic-stable-structures")]
-pub mod ic{
+pub mod ic {
     use alloc::{boxed::Box, vec};
 
     #[repr(transparent)]
     pub struct Stable<T>(pub T);
 
-    impl<T: ic_stable_structures::Memory> super::Memory for Stable<T>{
+    impl<T: ic_stable_structures::Memory> super::Memory for Stable<T> {
         fn read<'a>(&'a self, a: u64, s: u64) -> anyhow::Result<Box<dyn AsRef<[u8]> + 'a>> {
-            let mut v = vec![0u8;s as usize];
+            let mut v = vec![0u8; s as usize];
             self.0.read(a, &mut v);
             Ok(Box::new(v))
         }
-    
+
         fn write(&mut self, a: u64, x: &[u8]) -> anyhow::Result<()> {
-            self.0.write(a,x);
+            self.0.write(a, x);
             Ok(())
         }
-    
+
         fn size(&self) -> anyhow::Result<u64> {
             let s = self.0.size();
             Ok(s * 65536)
         }
-    
+
         fn grow(&mut self, x: u64) -> anyhow::Result<()> {
-            if self.0.grow((x + 65535) / 65536) == -1{
+            if self.0.grow((x + 65535) / 65536) == -1 {
                 anyhow::bail!("stable growth failed")
             }
             Ok(())
@@ -441,6 +430,8 @@ pub fn i64extendi32u(a: u32) -> anyhow::Result<tuple_list::tuple_list_type!(u64)
 pub fn i64extendi32s(a: u32) -> anyhow::Result<tuple_list::tuple_list_type!(u64)> {
     Ok(tuple_list::tuple_list!(a as i32 as i64 as u64))
 }
-pub fn i64truncf64s(a: f64) -> anyhow::Result<tuple_list::tuple_list_type!(u64)>{
-    Ok(tuple_list::tuple_list!(unsafe{a.trunc().to_int_unchecked::<i64>()} as u64))
+pub fn i64truncf64s(a: f64) -> anyhow::Result<tuple_list::tuple_list_type!(u64)> {
+    Ok(tuple_list::tuple_list!(
+        unsafe { a.trunc().to_int_unchecked::<i64>() } as u64
+    ))
 }

@@ -1,12 +1,9 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
-    convert::Infallible,
-    f32::consts::E,
-    iter::once,
-    sync::Arc,
+    borrow::Cow, collections::{BTreeMap, BTreeSet}, convert::Infallible, f32::consts::E, iter::once, sync::{Arc, OnceLock}
 };
 
 
+// use pit_core::{Arg, Interface};
 use proc_macro2::{Span, TokenStream};
 use quasiquote::quasiquote;
 use quote::{format_ident, quote, ToTokens};
@@ -61,8 +58,18 @@ impl Opts<Module<'static>> {
                 #root::func::unsync
             }
         } else {
-            quote! {
+            quote! {,#{opts.host()}
                 #root::func
+            }
+        }
+    }
+    pub fn host_tpit(&self) -> TokenStream{
+        match self.roots.get("tpit_rt"){
+            None => quote!{
+                ::core::convert::Infallible
+            },
+            Some(r) => quote!{
+                #r::Tpit<()>
             }
         }
     }
@@ -216,7 +223,7 @@ impl Opts<Module<'static>> {
                         h.finalize()
                     };
                     return quasiquote! {
-                        #{self.fp()}::ret(Ok(#{self.fp()}::Value::<C>::ExternRef(#root::Pit{
+                        #{self.fp()}::ret(Ok(#{self.fp()}::Value::<C>::ExternRef(#root::Pit::Guest{
                             id: [#(#x),*],
                             x: #{self.fp()}::CoeVec::coe(#root::tuple_list::tuple_list!(#(#params),*)),
                             s: [#(#s),*],
@@ -244,11 +251,13 @@ impl Opts<Module<'static>> {
                         quasiquote! {
                             [#(#s),*] => {
                                 let mut y = #{self.fp()}::CoeVec::coe(#root::tuple_list::tuple_list!(#(#params),*));
-                                y.extend(&mut x.x.clone());
+                                y.extend(&mut x.clone());
                                 ctx.#id(#{self.fp()}::CoeVec::uncoe(y))
                             }
                         }
                     });
+                    // let interface = self.tpit().iter().find(|a|a.rid() == x);
+                    // let meth = interface.and_then(|a|a.methods.get(name));
                 return quasiquote! {
                     'a: {
                         let x = #f;
@@ -258,10 +267,56 @@ impl Opts<Module<'static>> {
                         let Ok(x) = x.try_into() else{
                             break 'a #{self.fp()}::ret(Err(#root::_rexport::anyhow::anyhow!("not a pit externref")))
                         };
-                        let x: #root::Pit = x;
-                        match x.s{
-                            #(#cases),*,
-                            _ => break 'a #{self.fp()}::ret(Err(#root::_rexport::anyhow::anyhow!("invalid target")))
+                        match x{
+                            #root::Pit::Guest{s,x,id} => match s{
+                                #(#cases),*,
+                                _ => break 'a #{self.fp()}::ret(Err(#root::_rexport::anyhow::anyhow!("invalid target")))
+                            },
+                //             #root::Pit::Host{host} => #{match self.roots.get("tpit_rt"){
+                //                 None => quote!{
+                //                     match host{
+
+                //                     }
+                //                 },
+                //                 Some(r) => quasiquote!{
+                //                     let casted = unsafe{
+                //                         host.cast::<Box<dyn #{format_ident!("R{}",i)}>>()
+                //                     };
+                //                     let a = casted.#{format_ident!("{name}")}(#{
+                //                         let p = params.iter().zip(meth.unwrap().params.iter()).map(|(x,y)|match y{
+                //                             Arg::Resource { ty, nullable, take, ann } => quasiquote!{
+                //                                 Box::new(Shim{wrapped: ctx, x: #x}).into()
+                //                             },
+                //                             _ => quote!{
+                //                                 #x
+                //                             }
+                //                         });
+
+                //                         quote!{
+                //                             #(#p),*
+                //                         }
+                //                     });
+                //                     break 'a #{self.fp()}::ret(Ok(#root::tuple_list::tuple_list!(#{
+                //                         let r = meth.unwrap().rets.iter().enumerate().map(|(i,r)|{
+                //                             let i = syn::Index{index: i as u32, span: Span::call_site()};
+                //                             let i = quote!{
+                //                                 a.#i
+                //                             };
+                //                             match r{
+                //                                 Arg::Resource { ty, nullable, take, ann } => quote!{
+                //                                     #{self.fp()}::Value::<C>::ExternRef(#root::Pit::Host{host: unsafe{i.cast()}})
+                //                                 },
+                //                                 _ => i
+                //                             }
+                //                         });
+
+                //                         quote!{
+                //                             #(#r),*
+                //                         }
+                //                     })));
+                //                 }
+                //             }}
+                _ => todo!()
                         }
                     }
                 };
@@ -292,7 +347,7 @@ impl Opts<Module<'static>> {
                         //     bindname(&format!("pit/{}/~{PIT_NS}.drop", i.rid_str()))
                         // ); ctx.#id(x.x)
                         quasiquote!(
-                            ([#(#x),*],[#(#s),*]) => ctx.#id(#{self.fp()}::CoeVec::uncoe(x.x))
+                            ([#(#x),*],[#(#s),*]) => ctx.#id(#{self.fp()}::CoeVec::uncoe(x))
                         )
                     });
                 return quasiquote! {
@@ -302,10 +357,12 @@ impl Opts<Module<'static>> {
                             break 'a #{self.fp()}::ret(Ok(()));
                         };
                         if let Ok(x) = x.try_into(){
-                            let x: #root::Pit = x;
-                            break 'a match (x.id,x.s){
-                                #(#cases),*,
-                                _ => #{self.fp()}::ret(Ok(()))
+                            match x{
+                                #root::Pit::Guest{s,x,id} => => break 'a match (id,s){
+                                    #(#cases),*,
+                                    _ => #{self.fp()}::ret(Ok(()))
+                                },
+                                #root::Pit::Host{host} => break 'a #{self.fp()}::ret(Ok(()))
                             }
                         }else{
                             break 'a #{self.fp()}::ret(Ok(()))
@@ -445,6 +502,9 @@ impl Opts<Module<'static>> {
             }
         }
     }
+    // pub fn tpit(&self) -> &BTreeSet<Interface>{
+    //     return self.tpit.get_or_init(||pit_patch::get_interfaces(&self.module).unwrap().into_iter().collect())
+    // }
     pub fn render_self_sig_import(&self, name: Ident, data: &SignatureData) -> TokenStream {
         let root = self.crate_path.clone();
         let base = self.name.clone();
@@ -1276,6 +1336,7 @@ pub struct Opts<B> {
     pub embed: TokenStream,
     pub data: BTreeMap<Ident, TokenStream>,
     pub roots: BTreeMap<String, TokenStream>,
+    // pub tpit: OnceLock<BTreeSet<pit_core::Interface>>
     // pub cfg: Arc<dyn ImportCfg>,
 }
 impl<X: AsRef<[u8]>> Opts<X> {
@@ -1299,6 +1360,7 @@ impl<X: AsRef<[u8]>> Opts<X> {
             embed: opts.embed.clone(),
             data: opts.data.clone(),
             roots: opts.roots.clone(),
+            // tpit: opts.tpit.clone(),
             // cfg: opts.cfg.clone(),
         };
         return opts;
@@ -1310,7 +1372,15 @@ impl ToTokens for Opts<Module<'static>> {
     }
 }
 pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
-    // let mut opts = opts.clone();
+
+    let mut opts = opts.clone();
+    for f in opts.module.funcs.values_mut(){
+        if let Some(b) = f.body_mut(){
+            if let Cow::Owned(c) = waffle::backend::reducify::Reducifier::new(b).run(){
+                *b = c;
+            }
+        }
+    }
     // let is = if opts.flags.contains(Flags::PIT) {
     //     pit_patch::get_interfaces(&opts.module)
     //         .unwrap()
@@ -1676,7 +1746,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                 quote! {}
             }}{
                 type _ExternRef: Clone #{if opts.flags.contains(Flags::PIT){
-                    quote!{+ From<#root::Pit<Vec<#{opts.fp()}::Value<Self>>>> + TryInto<#root::Pit<Vec<#{opts.fp()}::Value<Self>>>>}
+                    quote!{+ From<#root::Pit<Vec<#{opts.fp()}::Value<Self>>,#{opts.host_tpit()}>> + TryInto<#root::Pit<Vec<#{opts.fp()}::Value<Self>>,#{opts.host_tpit()}>>}
                 }else{
                     quote!{}
                 }};
@@ -1684,6 +1754,95 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                 #(#fs)*
 
             }
+            // pub struct Shim<T: #name + ?Sized>{
+            //     pub wrapped: *mut T,
+            //     pub x: #{opts.fp()}::Value<T>,
+            // }
+            // #{match opts.roots.get("tpit_rt"){
+            //     None => quote!{
+
+            //     },
+            //     Some(tpit_rt) => quasiquote!{
+            //         impl<T: #name + ?Sized> Into<#tpit_rt::Tpit<()>> for Box<Shim<T>>{
+            //             fn into(self) -> #tpit_rt::Tpit<()>{
+            //                 if let #{opts.fp()}::Value::<T>::ExternRef(e) = *self{
+            //                     if let Ok(a) = e.try_into(){
+            //                         if let #root::Pit::Host{host} = a{
+            //                             return host;
+            //                         }
+            //                     }
+            //                 }
+            //                 Default::default()
+            //             }
+            //         }
+            //         impl<T: #name + ?Sized> Drop for Shim<T>{
+            //             fn drop(&mut self){
+            //                 let ctx = unsafe{
+            //                     &mut *self.wrapped
+            //                 };
+            //                 #root::rexport::tramp::tramp(#{opts.import("pit","drop",once(quote!{
+            //                     self.x.clone()
+            //                 }))})
+            //             }
+            //         }
+            //         #{
+            //             let a = opts.tpit().iter().map(|i|{
+            //                 let tname = format_ident!("R{}",i.rid_str());
+            //                 let meths = i.methods.iter().map(|(a,b)|
+            //                     quasiquote!{
+            //                         fn #{format_ident!("{a}")}#{pit_rust_guest::render_sig(&pit_rust_guest::Opts { root: tpit_rt.clone(), salt: vec![], tpit: true },&tpit_rt.clone(),i,b,&quote! {&mut self},false)}{
+            //                             let ctx = unsafe{
+            //                                 &mut 8self.wrappedPit::Host{host} = a{
+            //                                     return host;
+            //                             };
+            //                             let res = #{opts.import(&format!("pit/{}",i.rid_str()),&format!("{a}"),once(quote!{self.x.clone()}).chain(b.params.iter().enumerate().map(|(i,p)|{
+            //                                 let i = format_ident!("p{i}");
+            //                                 match p{
+            //                                     Arg::Resource{ty,nullable,take,ann} => {
+            //                                         quote!{
+            //                                             #{opts.fp()}::Value::<C>::ExternRef(Pit::Host{host:unsafe{
+            //                                                 #i.cast()
+            //                                             }}.into())
+            //                                         }
+            //                                     }
+            //                                     _ => quote!{
+            //                                         #i
+            //                                     }
+            //                                 }
+            //                             })))};
+            //                             let res = #root::rexport::tramp::tramp(res).unwrap().into_tuple()
+            //                             ;
+            //                             #{                                        let r = b.rets.iter().enumerate().map(|(i,r)|{
+            //                                 let i = syn::Index{index: i as u32, span: Span::call_site()};
+            //                                 let i = quote!{
+            //                                     res.#i
+            //                                 };
+            //                                 match r{
+            //                                     Arg::Resource { ty, nullable, take, ann } => quote!{
+            //                                         Box::new(Shim{wrapped:self.wrapped,x: #i}).into()
+            //                                     },
+            //                                     _ => i
+            //                                 }
+            //                             });
+
+            //                             quote!{
+            //                                 #(#r),*
+            //                             }}
+            //                         }
+            //                     }
+            //                 });
+            //                 quote!{
+            //                     impl<C: #name + ?Sized> #tname for Shim<C>{
+            //                         #(#meths),*
+            //                     }
+            //                 }
+            //             });
+            //             quote!{
+            //                 #(#a)*
+            //             }
+            //         }
+            //     }
+            // }}
             pub fn init<C: #name + 'static>(ctx: &mut C) -> #root::_rexport::anyhow::Result<()>{
                 #(#init);*;
                 return Ok(())

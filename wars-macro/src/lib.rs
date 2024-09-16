@@ -82,6 +82,14 @@ impl Parse for O {
                         o.flags &= Flags::LEGACY.complement();
                     }
                 }
+                "lpit" => {
+                    let b: LitBool = input.parse()?;
+                    if b.value {
+                        o.flags |= Flags::PIT
+                    } else {
+                        o.flags &= Flags::PIT.complement();
+                    }
+                }
                 _ => {
                     match i
                         .to_string()
@@ -118,6 +126,7 @@ pub fn wars(a: TokenStream) -> TokenStream {
             embed: o.embed,
             data: o.data,
             roots: o.roots,
+            tpit: Default::default(),
             // cfg: o.cfg,
         }
         .to_mod(),
