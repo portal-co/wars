@@ -934,7 +934,7 @@ impl Opts<Module<'static>> {
                             }
                         },
                         waffle::ValueDef::Placeholder(_) => todo!(),
-                        waffle::ValueDef::Trace(_, _) => todo!(),
+                        // waffle::ValueDef::Trace(_, _) => todo!(),
                         waffle::ValueDef::None => todo!(),
                     };
                     quote! {
