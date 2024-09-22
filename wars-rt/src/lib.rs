@@ -216,6 +216,7 @@ pub mod _rexport {
     pub use anyhow;
     pub use tramp;
     pub use tuple_list;
+    pub extern crate alloc;
 }
 macro_rules! int_ty{
     ($int:ty => $p:ident) => {

@@ -62,6 +62,9 @@ pub fn bindname(a: &str) -> String {
 // }
 pub const INTRINSIC: &'static str = "wars_intrinsic/";
 impl Opts<Module<'static>> {
+    pub fn alloc(&self) -> TokenStream{
+        quasiquote!(#{self.crate_path.clone()}::_rexport::alloc)
+    }
     pub fn fp(&self) -> TokenStream {
         let root = self.crate_path.clone();
         if self.flags.contains(Flags::ASYNC) {
@@ -1461,8 +1464,8 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
     if (opts.flags.contains(Flags::BIND)) {
         let k = format_ident!("rust_table");
         fields.push(k.clone());
-        z.push(quote! {
-            #k: ::alloc::collections::BTreeMap<u32,AnyCell>,
+        z.push(quasiquote! {
+            #k:  #{opts.alloc()}::collections::BTreeMap<u32,AnyCell>,
         })
     }
     let mut init = vec![];
@@ -1536,8 +1539,8 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                     Vec<u8>
                 };
                 if d.shared {
-                    t = quote! {
-                        ::alloc::sync::Arc<#root::Mutex<#t>>
+                    t = quasiquote! {
+                        #{opts.alloc()}::sync::Arc<#root::Mutex<#t>>
                     };
                 };
                 z.push(quote! {
@@ -1569,8 +1572,8 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                         }
                     };
                     if d.shared {
-                        p = quote! {
-                            ::alloc::sync::Arc<#root::Mutex<#p>>
+                        p = quasiquote! {
+                            #{opts.alloc()}::sync::Arc<#root::Mutex<#p>>
                         };
                     };
                     fs.push(quote! {
@@ -1664,8 +1667,8 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                             }
                         };
                         if opts.module.memories[*m].shared{
-                            p = quote!{
-                                ::alloc::sync::Arc<#root::Mutex<#p>>
+                            p = quasiquote!{
+                                #{opts.alloc()}::sync::Arc<#root::Mutex<#p>>
                             };
                         };
                         p
@@ -1749,13 +1752,13 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
     });
     quasiquote! {
         mod #internal_path{
-            extern crate alloc;
+            // extern crate alloc;
             #(#funcs)*
             use #root::Memory;
-            use ::alloc::vec::Vec;
-            use ::alloc::boxed::Box;
-            use ::alloc::vec;
-            pub fn alloc<T>(m: &mut ::alloc::collections::BTreeMap<u32,T>, x: T) -> u32{
+            use #{opts.alloc()}::vec::Vec;
+            use  #{opts.alloc()}::boxed::Box;
+            use  #{opts.alloc()}::vec;
+            pub fn alloc<T>(m: &mut  #{opts.alloc()}::collections::BTreeMap<u32,T>, x: T) -> u32{
                 let mut u = 0;
                 while m.contains_key(&u){
                     u += 1;
