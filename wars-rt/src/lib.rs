@@ -104,6 +104,7 @@ pub mod ic {
         }
     }
 }
+
 impl Memory for Vec<u8> {
     fn read<'a>(&'a self, a: u64, s: u64) -> anyhow::Result<Box<dyn AsRef<[u8]> + 'a>> {
         Ok(Box::new(&self[(a as usize)..][..(s as usize)]))

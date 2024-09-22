@@ -14,6 +14,17 @@ use waffle::{
     cfg::CFGInfo, entity::EntityRef, Block, BlockTarget, Export, ExportKind, Func, ImportKind,
     Memory, Module, Operator, Signature, SignatureData, Type, Value,
 };
+pub trait Plugin{
+    fn pre(&self, module: &mut Module<'static>);
+    fn import(&self, opts: &Opts<Module<'static>>, module: &str, name: &str, params: Vec<TokenStream>) -> Option<TokenStream>;
+    fn post(&self, opts: &Opts<Module<'static>>) -> TokenStream;
+    fn bounds(&self, opts: &Opts<Module<'static>>) -> Option<TokenStream>{
+        None
+    }
+    fn exref_bounds(&self, opts: &Opts<Module<'static>>) -> Option<TokenStream>{
+        None
+    }
+}
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
     pub struct Flags: u32{
@@ -58,7 +69,7 @@ impl Opts<Module<'static>> {
                 #root::func::unsync
             }
         } else {
-            quote! {,#{opts.host()}
+            quote! {
                 #root::func
             }
         }
@@ -109,12 +120,30 @@ impl Opts<Module<'static>> {
         name: &str,
         mut params: impl Iterator<Item = TokenStream>,
     ) -> TokenStream {
+        let params = params.collect::<Vec<_>>();
+        for pl in self.plugins.iter(){
+            if let Some(a) = pl.import(self,module,name,params.clone()){
+                return a;
+            }
+        }
+        let mut params = params.into_iter();
         let root = self.crate_path.clone();
         // if self.flags.contains(Flags::UNSANDBOXED) {
         if self.flags.contains(Flags::HOST_MEMORY) {
-            if module == "wars/memory/host" {
-                match name {
-                    _ => {}
+            if let Some(a) = module.strip_prefix("!!unsafe/"){
+                if a == "linux"{
+                    if let Some(s) = name.strip_prefix("syscall"){
+                        if let Some((s,_)) = s.split_once("/"){
+                            if let Some(l) = self.roots.get("linux-syscall"){
+                                return quasiquote! {
+                                    #{self.fp()}::ret(match #l::syscall!(#l::#{format_ident!("SYS_{s}")}, #(#params),*).try_usize(){
+                                        Ok(a) => Ok(a as u64),
+                                        Err(e) => Err(e.into())
+                                    })
+                                };
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -880,6 +909,7 @@ impl Opts<Module<'static>> {
                                     };
                                     let offset = waffle::op_traits::memory_arg(o).expect(&format!("a memory arg from {}",o)).offset;
                                     
+
                                     let offset =  if self.module.memories[m2].memory64{
                                         quote! {#offset}
                                     } else{
@@ -1336,6 +1366,7 @@ pub struct Opts<B> {
     pub embed: TokenStream,
     pub data: BTreeMap<Ident, TokenStream>,
     pub roots: BTreeMap<String, TokenStream>,
+    pub plugins: Vec<Arc<dyn Plugin>>,
     // pub tpit: OnceLock<BTreeSet<pit_core::Interface>>
     // pub cfg: Arc<dyn ImportCfg>,
 }
@@ -1360,6 +1391,7 @@ impl<X: AsRef<[u8]>> Opts<X> {
             embed: opts.embed.clone(),
             data: opts.data.clone(),
             roots: opts.roots.clone(),
+            plugins: opts.plugins.clone(),
             // tpit: opts.tpit.clone(),
             // cfg: opts.cfg.clone(),
         };
@@ -1374,6 +1406,9 @@ impl ToTokens for Opts<Module<'static>> {
 pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
 
     let mut opts = opts.clone();
+    for p in opts.plugins.iter(){
+        p.pre(&mut opts.module);
+    }
     for f in opts.module.funcs.values_mut(){
         if let Some(b) = f.body_mut(){
             if let Cow::Owned(c) = waffle::backend::reducify::Reducifier::new(b).run(){
@@ -1661,7 +1696,19 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                 continue;
             }
         }
+        if opts.flags.contains(Flags::HOST_MEMORY){
+            if i.module.starts_with("!!unsafe"){
+                continue;
+            }
+        }
         if let ImportKind::Func(f) = &i.kind {
+            for plugin in opts.plugins.iter(){
+                if plugin.import(&opts,&i.module,&i.name,opts.module.signatures[opts.module.funcs[*f].sig()].params.iter().map(
+                    |_|quote!{}
+                ).collect()).is_some(){
+                    continue;
+                }
+            }
             let name = format_ident!("{}_{}", bindname(&i.module), bindname(&i.name));
             fs.push(opts.render_self_sig_import(
                 name,
@@ -1702,6 +1749,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
     });
     quasiquote! {
         mod #internal_path{
+            extern crate alloc;
             #(#funcs)*
             use #root::Memory;
             use ::alloc::vec::Vec;
@@ -1744,12 +1792,34 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                 quote!{+ #root::wasix::XSpec}
             }else{
                 quote! {}
-            }}{
+            }} #{
+                let a = opts.plugins.iter().map(|p|{
+                    let b = p.bounds(&opts);
+                    match b{
+                        None => quote!{},
+                        Some(a) => quote!{+ #a}
+                    }
+                });
+                quote!{
+                    #(#a)*
+                }
+            }{
                 type _ExternRef: Clone #{if opts.flags.contains(Flags::PIT){
                     quote!{+ From<#root::Pit<Vec<#{opts.fp()}::Value<Self>>,#{opts.host_tpit()}>> + TryInto<#root::Pit<Vec<#{opts.fp()}::Value<Self>>,#{opts.host_tpit()}>>}
                 }else{
                     quote!{}
-                }};
+                }}  #{
+                    let a = opts.plugins.iter().map(|p|{
+                        let b = p.exref_bounds(&opts);
+                        match b{
+                            None => quote!{},
+                            Some(a) => quote!{+ #a}
+                        }
+                    });
+                    quote!{
+                        #(#a)*
+                    }
+                };
                 fn data(&mut self) -> &mut #data<Self>;
                 #(#fs)*
 
@@ -1860,6 +1930,10 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                         #(#clones),*
                     }
                 }
+            }
+            #{
+                let a = opts.plugins.iter().map(|a|a.post(&opts));
+                quote!(#(#a)*)
             }
         }
         use #internal_path::{#name,#data};
