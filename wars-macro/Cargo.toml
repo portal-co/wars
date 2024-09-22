@@ -14,8 +14,5 @@ quote = "1.0.36"
 syn = "2.0.66"
 wars = { version = "0.2.0", path = "../wars" }
 wat = "1.209.1"
-
-[dev-dependencies]
-wars-rt = { version = "0.2.0", path = "../wars-rt" }
 [lib]
 proc-macro = true

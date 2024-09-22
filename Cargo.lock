@@ -1101,7 +1101,6 @@ dependencies = [
  "quote",
  "syn 2.0.77",
  "wars",
- "wars-rt",
  "wat",
 ]
 
