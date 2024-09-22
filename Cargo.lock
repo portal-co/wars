@@ -1078,7 +1078,7 @@ dependencies = [
 
 [[package]]
 name = "wars"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "bitflags 2.6.0",
  "hex",
@@ -1094,7 +1094,7 @@ dependencies = [
 
 [[package]]
 name = "wars-macro"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "expander",
  "proc-macro2",
@@ -1107,7 +1107,7 @@ dependencies = [
 
 [[package]]
 name = "wars-rt"
-version = "0.1.2"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "castaway",

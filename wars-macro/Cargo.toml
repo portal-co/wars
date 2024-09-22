@@ -16,6 +16,6 @@ wars = { version = "0.2.0", path = "../wars" }
 wat = "1.209.1"
 
 [dev-dependencies]
-wars-rt = { version = "0.1.0", path = "../wars-rt" }
+wars-rt = { version = "0.2.0", path = "../wars-rt" }
 [lib]
 proc-macro = true
