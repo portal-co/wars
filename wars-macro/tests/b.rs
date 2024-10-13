@@ -4,3 +4,4 @@ wars_macro::wars!(
 );
 
 fn x<A: Wars>() {}
+/*  */

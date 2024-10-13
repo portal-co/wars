@@ -14,9 +14,18 @@ use waffle::{
     cfg::CFGInfo, entity::EntityRef, Block, BlockTarget, Export, ExportKind, Func, ImportKind,
     Memory, Module, Operator, Signature, SignatureData, Type, Value,
 };
+pub mod pit;
+
+pub struct MemImport{
+    pub expr: TokenStream,
+    // pub r#type: TokenStream
+}
 pub trait Plugin{
     fn pre(&self, module: &mut Module<'static>);
     fn import(&self, opts: &Opts<Module<'static>>, module: &str, name: &str, params: Vec<TokenStream>) -> Option<TokenStream>;
+    fn mem_import(&self, opts: &Opts<Module<'static>>, module: &str, name: &str) -> Option<MemImport>{
+        None
+    }
     fn post(&self, opts: &Opts<Module<'static>>) -> TokenStream;
     fn bounds(&self, opts: &Opts<Module<'static>>) -> Option<TokenStream>{
         None
@@ -24,6 +33,7 @@ pub trait Plugin{
     fn exref_bounds(&self, opts: &Opts<Module<'static>>) -> Option<TokenStream>{
         None
     }
+
 }
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -33,7 +43,7 @@ bitflags::bitflags! {
         const LEGACY = 0x4;
         const WASIX = 0x8;
         const BIND = 0x10;
-        const PIT = 0x20;
+        // const PIT = 0x20;
         // const UNSANDBOXED = 0x2;
     }
 }
@@ -101,6 +111,11 @@ impl Opts<Module<'static>> {
                         ::std::slice::from_raw_parts_mut(::std::ptr::null(),usize::MAX)
                     }
                 };
+            }
+            for p in self.plugins.iter(){
+            if let Some(i) = p.mem_import(self, &i.module, &i.name){
+                return quasiquote!(#{i.expr});
+            }
             }
             if self.flags.contains(Flags::WASIX) {
                 if i.module == "wasi_snapshot_preview1" || i.module == "wasix_32v1" {
@@ -245,164 +260,9 @@ impl Opts<Module<'static>> {
         //         }
         //     }
         // }
-        if self.flags.contains(Flags::PIT) {
-            if let Some(i) = module.strip_prefix("pit/") {
-                let x: [u8; 32] = hex::decode(i).unwrap().try_into().unwrap();
-                if let Some(s) = name.strip_prefix("~") {
-                    let s = {
-                        let mut h = sha3::Sha3_256::default();
-                        h.update(s);
-                        h.finalize()
-                    };
-                    return quasiquote! {
-                        #{self.fp()}::ret(Ok(#{self.fp()}::Value::<C>::ExternRef(#root::Pit::Guest{
-                            id: [#(#x),*],
-                            x: #{self.fp()}::CoeVec::coe(#root::tuple_list::tuple_list!(#(#params),*)),
-                            s: [#(#s),*],
-                        }.into())))
-                    };
-                }
-
-                let mut f = params.next().unwrap();
-                // let id = format_ident!("{}", bindname(&format!("pit/{i}/~{PIT_NS}/{name}")));
-                // ctx.#id(x.x,#(#params),*)
-                let params = params.collect::<Vec<_>>();
-                let cases = self
-                    .module
-                    .exports
-                    .iter()
-                    .filter_map(|x| x.name.strip_prefix(&format!("pit/{i}/~")))
-                    .filter_map(|x| x.strip_suffix(&format!("/{name}")))
-                    .map(|s| {
-                        let id = format_ident!("{}", bindname(&format!("pit/{i}/~{s}/{name}")));
-                        let s = {
-                            let mut h = sha3::Sha3_256::default();
-                            h.update(s);
-                            h.finalize()
-                        };
-                        quasiquote! {
-                            [#(#s),*] => {
-                                let mut y = #{self.fp()}::CoeVec::coe(#root::tuple_list::tuple_list!(#(#params),*));
-                                y.extend(&mut x.clone());
-                                ctx.#id(#{self.fp()}::CoeVec::uncoe(y))
-                            }
-                        }
-                    });
-                    let interface = self.tpit().iter().find(|a|a.rid() == x);
-                    let meth = interface.and_then(|a|a.methods.get(name));
-                return quasiquote! {
-                    'a: {
-                        let x = #f;
-                        let #{self.fp()}::Value::<C>::ExternRef(x) = x else{
-                            break 'a #{self.fp()}::ret(Err(#root::_rexport::anyhow::anyhow!("not an externref")))
-                        };
-                        let Ok(x) = x.try_into() else{
-                            break 'a #{self.fp()}::ret(Err(#root::_rexport::anyhow::anyhow!("not a pit externref")))
-                        };
-                        match x{
-                            #root::Pit::Guest{s,x,id} => match s{
-                                #(#cases),*,
-                                _ => break 'a #{self.fp()}::ret(Err(#root::_rexport::anyhow::anyhow!("invalid target")))
-                            },
-                            #root::Pit::Host{host} => #{match self.roots.get("tpit_rt"){
-                                None => quote!{
-                                    match host{
-
-                                    }
-                                },
-                                Some(r) => quasiquote!{
-                                    let casted = unsafe{
-                                        host.cast::<Box<dyn #{format_ident!("R{}",i)}>>()
-                                    };
-                                    let a = casted.#{format_ident!("{name}")}(#{
-                                        let p = params.iter().zip(meth.unwrap().params.iter()).map(|(x,y)|match y{
-                                            Arg::Resource { ty, nullable, take, ann } => quasiquote!{
-                                                Box::new(Shim{wrapped: ctx, x: #x}).into()
-                                            },
-                                            _ => quote!{
-                                                #x
-                                            }
-                                        });
-
-                                        quote!{
-                                            #(#p),*
-                                        }
-                                    });
-                                    break 'a #{self.fp()}::ret(Ok(#root::tuple_list::tuple_list!(#{
-                                        let r = meth.unwrap().rets.iter().enumerate().map(|(i,r)|{
-                                            let i = syn::Index{index: i as u32, span: Span::call_site()};
-                                            let i = quote!{
-                                                a.#i
-                                            };
-                                            match r{
-                                                Arg::Resource { ty, nullable, take, ann } => quote!{
-                                                    #{self.fp()}::Value::<C>::ExternRef(#root::Pit::Host{host: unsafe{i.cast()}})
-                                                },
-                                                _ => i
-                                            }
-                                        });
-
-                                        quote!{
-                                            #(#r),*
-                                        }
-                                    })));
-                                }
-                            }}
-                _ => todo!()
-                        }
-                    }
-                };
-            }
-            if module == "pit" && name == "drop" {
-                let mut f = params.next().unwrap();
-                let cases = self
-                    .module
-                    .exports
-                    .iter()
-                    .filter_map(|x| {
-                        let x = x.name.as_str();
-                        let x = x.strip_prefix("pit/")?;
-                        let (a, x) = x.split_once("/~")?;
-                        let s = x.strip_suffix(".drop")?;
-                        return Some((a, s));
-                    })
-                    .map(|(a, s)| {
-                        let x = hex::decode(a).unwrap();
-                        let id = format_ident!("{}", bindname(&format!("pit/{a}/~{s}.drop")));
-                        let s = {
-                            let mut h = sha3::Sha3_256::default();
-                            h.update(s);
-                            h.finalize()
-                        };
-                        // let id = format_ident!(
-                        //     "{}",
-                        //     bindname(&format!("pit/{}/~{PIT_NS}.drop", i.rid_str()))
-                        // ); ctx.#id(x.x)
-                        quasiquote!(
-                            ([#(#x),*],[#(#s),*]) => ctx.#id(#{self.fp()}::CoeVec::uncoe(x))
-                        )
-                    });
-                return quasiquote! {
-                    'a: {
-                        let x = #f;
-                        let #{self.fp()}::Value::<C>::ExternRef(x) = x else{
-                            break 'a #{self.fp()}::ret(Ok(()));
-                        };
-                        if let Ok(x) = x.try_into(){
-                            match x{
-                                #root::Pit::Guest{s,x,id} => => break 'a match (id,s){
-                                    #(#cases),*,
-                                    _ => #{self.fp()}::ret(Ok(()))
-                                },
-                                #root::Pit::Host{host} => break 'a #{self.fp()}::ret(Ok(()))
-                            }
-                        }else{
-                            break 'a #{self.fp()}::ret(Ok(()))
-                        }
-                    }
-                };
-            }
-        };
+        // if self.flags.contains(Flags::PIT) {
+            
+        // };
         let id = format_ident!("{}_{}", bindname(module), bindname(name));
         return quote! {
             ctx.#id(#root::_rexport::tuple_list::tuple_list!(#(#params),*))
@@ -534,9 +394,6 @@ impl Opts<Module<'static>> {
             }
         }
     }
-    pub fn tpit(&self) -> &BTreeSet<Interface>{
-        return self.tpit.get_or_init(||pit_patch::get_interfaces(&self.module).unwrap().into_iter().collect())
-    }
     pub fn render_self_sig_import(&self, name: Ident, data: &SignatureData) -> TokenStream {
         let root = self.crate_path.clone();
         let base = self.name.clone();
@@ -553,11 +410,11 @@ impl Opts<Module<'static>> {
         let returns = data.returns.iter().map(|x| self.render_ty(&ctx, *x));
         if self.flags.contains(Flags::ASYNC) {
             quote! {
-                fn #name<'a>(self: &'a mut Self, imp: #root::_rexport::tuple_list::tuple_list_type!(#(#params),*)) -> #root::func::unsync::AsyncRec<'a,#root::_rexport::anyhow::Result<#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)>>;
+                fn #name<'a>(self: &'a mut Self, imp: #root::_rexport::tuple_list::tuple_list_type!(#(#params),*)) -> #root::func::unsync::AsyncRec<'a,#root::_rexport::anyhow::Result<#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)>> where Self: 'static;
             }
         } else {
             quote! {
-                fn #name<'a>(self: &'a mut Self, imp: #root::_rexport::tuple_list::tuple_list_type!(#(#params),*)) -> #root::_rexport::tramp::BorrowRec<'a,#root::_rexport::anyhow::Result<#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)>>;
+                fn #name<'a>(self: &'a mut Self, imp: #root::_rexport::tuple_list::tuple_list_type!(#(#params),*)) -> #root::_rexport::tramp::BorrowRec<'a,#root::_rexport::anyhow::Result<#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)>> where Self: 'static;
             }
         }
     }
@@ -819,7 +676,7 @@ impl Opts<Module<'static>> {
                                     let len = format_ident!("{}",vals[2].to_string());
                                     quasiquote!{
                                         {
-                                            let m = vec![(#val & 0xff) as u8; #len as usize];
+                                            let m = #{self.alloc()}::vec![(#val & 0xff) as u8; #len as usize];
                                             match #dst.write(#dst_ptr as u64,&m){
                                                 Ok(a) => a,
                                                 Err(e) => return #{self.fp()}::ret(Err(e))
@@ -1348,7 +1205,7 @@ impl Opts<Module<'static>> {
         };
         if self.flags.contains(Flags::ASYNC) {
             b = quasiquote! {
-                return #{self.fp()}::AsyncRec::Async(Box::pin(async move{
+                return #{self.fp()}::AsyncRec::Async(#{self.alloc()}::boxed::Box::pin(async move{
                     #b
                 }))
             }
@@ -1370,7 +1227,6 @@ pub struct Opts<B> {
     pub data: BTreeMap<Ident, TokenStream>,
     pub roots: BTreeMap<String, TokenStream>,
     pub plugins: Vec<Arc<dyn Plugin>>,
-    pub tpit: OnceLock<BTreeSet<pit_core::Interface>>
     // pub cfg: Arc<dyn ImportCfg>,
 }
 impl<X: AsRef<[u8]>> Opts<X> {
@@ -1395,7 +1251,7 @@ impl<X: AsRef<[u8]>> Opts<X> {
             data: opts.data.clone(),
             roots: opts.roots.clone(),
             plugins: opts.plugins.clone(),
-            tpit: opts.tpit.clone(),
+            // tpit: opts.tpit.clone(),
             // cfg: opts.cfg.clone(),
         };
         return opts;
@@ -1473,7 +1329,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
         // let dty = opts.render_ty(&quote! {Target}, d.ty.clone());
         let n = Ident::new(&t.to_string(), Span::call_site());
         z.push(quasiquote! {
-            #n: Vec<#{opts.fp()}::Value<Target>>
+            #n: #{opts.alloc()}::vec::Vec<#{opts.fp()}::Value<Target>>
         });
         fields.push(n.clone());
         sfields.push(n.clone());
@@ -1490,7 +1346,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
             })
         }
         fs.push(quasiquote! {
-            fn #n(&mut self) -> &mut Vec<#{opts.fp()}::Value<Self>>{
+            fn #n(&mut self) -> &mut #{opts.alloc()}::vec::Vec<#{opts.fp()}::Value<Self>>{
                 &mut self.data().#n
             }
         })
@@ -1559,7 +1415,8 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                     && b == "memory"
                     && opts.flags.contains(Flags::WASIX)
                 {
-                } else if a.starts_with("pit") && opts.flags.contains(Flags::PIT) {
+                }else if opts.plugins.iter().any(|p|p.mem_import(&opts, &a, &b).is_some()){
+                // } else if a.starts_with("pit") && opts.flags.contains(Flags::PIT) {
                 } else {
                     // let a = bindname(&a);
                     // let b = bindname(&b);
@@ -1613,6 +1470,8 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
             }
         }
     }
+    let mut fs2 = vec![];
+    let mut fs3 = vec![];
     for xp in opts.module.exports.iter() {
         let xp = Export {
             name: bindname(&xp.name),
@@ -1626,9 +1485,13 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                     opts.fname(f),
                     &opts.module.signatures[opts.module.funcs[f].sig()],
                 );
-                fs.push(quote! {
+                let e =opts.render_self_sig_import(format_ident!("{}", xp.name), &opts.module.signatures[opts.module.funcs[f].sig()]);
+                fs2.push(quote! {
                     #d
                 });
+                fs3.push(quote!{
+                    #e
+                })
             }
             ExportKind::Table(t) => {
                 let d = &opts.module.tables[*t];
@@ -1636,7 +1499,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                 let x = Ident::new(&t.to_string(), Span::call_site());
                 let mn = Ident::new(&xp.name, Span::call_site());
                 let i = quote! {
-                    fn #mn(&mut self) -> &mut Vec<#tt>{
+                    fn #mn(&mut self) -> &mut #{opts.alloc()}::vec::Vec<#tt>{
                         return &mut self.z().#x;
                     }
                 };
@@ -1694,11 +1557,11 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                 continue;
             }
         }
-        if opts.flags.contains(Flags::PIT) {
-            if i.module.starts_with("pit") {
-                continue;
-            }
-        }
+        // if opts.flags.contains(Flags::PIT) {
+        //     if i.module.starts_with("pit") {
+        //         continue;
+        //     }
+        // }
         if opts.flags.contains(Flags::HOST_MEMORY){
             if i.module.starts_with("!!unsafe"){
                 continue;
@@ -1751,38 +1614,33 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
         }
     });
     quasiquote! {
-        mod #internal_path{
+        // mod #internal_path{
             // extern crate alloc;
-            #(#funcs)*
-            use #root::Memory;
-            use #{opts.alloc()}::vec::Vec;
-            use  #{opts.alloc()}::boxed::Box;
-            use  #{opts.alloc()}::vec;
-            pub fn alloc<T>(m: &mut  #{opts.alloc()}::collections::BTreeMap<u32,T>, x: T) -> u32{
-                let mut u = 0;
-                while m.contains_key(&u){
-                    u += 1;
-                };
-                m.insert(u,x);
-                return u;
-            }
+            // pub fn alloc<T>(m: &mut  #{opts.alloc()}::collections::BTreeMap<u32,T>, x: T) -> u32{
+            //     let mut u = 0;
+            //     while m.contains_key(&u){
+            //         u += 1;
+            //     };
+            //     m.insert(u,x);
+            //     return u;
+            // }
             pub struct #data<Target: #name + ?Sized>{
                 #(#z),*
             }
             impl<Target: #name + ?Sized> #root::Traverse<Target> for #data<Target>{
-                fn traverse<'a>(&'a self) -> Box<dyn Iterator<Item = &'a Target::ExternRef> + 'a>{
+                fn traverse<'a>(&'a self) ->#{opts.alloc()}::boxed::Box<dyn Iterator<Item = &'a Target::ExternRef> + 'a>{
                     return #{
                         let x = sfields.iter().map(|a|quote!{#root::Traverse::<Target>::traverse(&self.#a)});
-                        quote!{
-                            Box::new(::core::iter::empty()#(.chain(#x))*)
+                        quasiquote!{
+                            #{opts.alloc()}::boxed::Box::new(::core::iter::empty()#(.chain(#x))*)
                         }
                     }
                 }
-                fn traverse_mut<'a>(&'a mut self) -> Box<dyn Iterator<Item = &'a mut Target::ExternRef> + 'a>{
+                fn traverse_mut<'a>(&'a mut self) -> #{opts.alloc()}::boxed::Box<dyn Iterator<Item = &'a mut Target::ExternRef> + 'a>{
                     return #{
                         let x = sfields.iter().map(|a|quote!{#root::Traverse::<Target>::traverse_mut(&mut self.#a)});
-                        quote!{
-                            Box::new(::core::iter::empty()#(.chain(#x))*)
+                        quasiquote!{
+                            #{opts.alloc()}::boxed::Box::new(::core::iter::empty()#(.chain(#x))*)
                         }
                     }
                 }
@@ -1807,11 +1665,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                     #(#a)*
                 }
             }{
-                type _ExternRef: Clone #{if opts.flags.contains(Flags::PIT){
-                    quote!{+ From<#root::Pit<Vec<#{opts.fp()}::Value<Self>>,#{opts.host_tpit()}>> + TryInto<#root::Pit<Vec<#{opts.fp()}::Value<Self>>,#{opts.host_tpit()}>>}
-                }else{
-                    quote!{}
-                }}  #{
+                type _ExternRef: Clone  #{
                     let a = opts.plugins.iter().map(|p|{
                         let b = p.exref_bounds(&opts);
                         match b{
@@ -1827,99 +1681,27 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                 #(#fs)*
 
             }
-            pub struct Shim<T: #name + ?Sized>{
-                pub wrapped: *mut T,
-                pub x: #{opts.fp()}::Value<T>,
+            pub trait #{format_ident!("{name}Impl")}: #name{
+                #(#fs3)*
+                fn init(&mut self) -> #root::_rexport::anyhow::Result<()> where Self: 'static;
             }
-            #{match opts.roots.get("tpit_rt"){
-                None => quote!{
-
-                },
-                Some(tpit_rt) => quasiquote!{
-                    impl<T: #name + ?Sized> Into<#tpit_rt::Tpit<()>> for Box<Shim<T>>{
-                        fn into(self) -> #tpit_rt::Tpit<()>{
-                            if let #{opts.fp()}::Value::<T>::ExternRef(e) = *self{
-                                if let Ok(a) = e.try_into(){
-                                    if let #root::Pit::Host{host} = a{
-                                        return host;
-                                    }
-                                }
-                            }
-                            Default::default()
-                        }
-                    }
-                    impl<T: #name + ?Sized> Drop for Shim<T>{
-                        fn drop(&mut self){
-                            let ctx = unsafe{
-                                &mut *self.wrapped
-                            };
-                            #root::rexport::tramp::tramp(#{opts.import("pit","drop",once(quote!{
-                                self.x.clone()
-                            }))})
-                        }
-                    }
-                    #{
-                        let a = opts.tpit().iter().map(|i|{
-                            let tname = format_ident!("R{}",i.rid_str());
-                            let meths = i.methods.iter().map(|(a,b)|
-                                quasiquote!{
-                                    fn #{format_ident!("{a}")}#{pit_rust_guest::render_sig(&pit_rust_guest::Opts { root: tpit_rt.clone(), salt: vec![], tpit: true },&tpit_rt.clone(),i,b,&quote! {&mut self},false)}{
-                                        let ctx = unsafe{
-                                            &mut 8self.wrappedPit::Host{host} = a{
-                                                return host;
-                                        };
-                                        let res = #{opts.import(&format!("pit/{}",i.rid_str()),&format!("{a}"),once(quote!{self.x.clone()}).chain(b.params.iter().enumerate().map(|(i,p)|{
-                                            let i = format_ident!("p{i}");
-                                            match p{
-                                                Arg::Resource{ty,nullable,take,ann} => {
-                                                    quote!{
-                                                        #{opts.fp()}::Value::<C>::ExternRef(Pit::Host{host:unsafe{
-                                                            #i.cast()
-                                                        }}.into())
-                                                    }
-                                                }
-                                                _ => quote!{
-                                                    #i
-                                                }
-                                            }
-                                        })))};
-                                        let res = #root::rexport::tramp::tramp(res).unwrap().into_tuple()
-                                        ;
-                                        #{                                        let r = b.rets.iter().enumerate().map(|(i,r)|{
-                                            let i = syn::Index{index: i as u32, span: Span::call_site()};
-                                            let i = quote!{
-                                                res.#i
-                                            };
-                                            match r{
-                                                Arg::Resource { ty, nullable, take, ann } => quote!{
-                                                    Box::new(Shim{wrapped:self.wrapped,x: #i}).into()
-                                                },
-                                                _ => i
-                                            }
-                                        });
-
-                                        quote!{
-                                            #(#r),*
-                                        }}
-                                    }
-                                }
-                            });
-                            quote!{
-                                impl<C: #name + ?Sized> #tname for Shim<C>{
-                                    #(#meths),*
-                                }
-                            }
-                        });
-                        quote!{
-                            #(#a)*
-                        }
+            const _: () = {
+                use #root::Memory;
+                impl<C: #name> #{format_ident!("{name}Impl")} for C{
+                    #(#fs2)*
+                    fn init(&mut self) -> #root::_rexport::anyhow::Result<()> where Self: 'static{
+                        let ctx = self;
+                        #(#init);*;
+                        return Ok(())
                     }
                 }
-            }}
-            pub fn init<C: #name + 'static>(ctx: &mut C) -> #root::_rexport::anyhow::Result<()>{
-                #(#init);*;
-                return Ok(())
-            }
+                #(#funcs)*
+            };
+            // pub struct Shim<T: #name + ?Sized>{
+            //     pub wrapped: *mut T,
+            //     pub x: #{opts.fp()}::Value<T>,
+            // }
+           
             impl<Target: #name + ?Sized> Default for #data<Target>{
                 fn default() -> Self{
                     Self{
@@ -1938,7 +1720,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                 let a = opts.plugins.iter().map(|a|a.post(&opts));
                 quote!(#(#a)*)
             }
-        }
-        use #internal_path::{#name,#data};
+        // }
+        // use #internal_path::{#name,#data};
     }
 }
