@@ -1,6 +1,6 @@
 [package]
 name = "wars-macro"
-version = "0.2.2"
+version = "0.3.0"
 edition = "2021"
 license = "CC0-1.0"
 description = "Wasm to Rust converter"
@@ -12,7 +12,7 @@ expander = {version="2.1.0",features=["pretty"]}
 proc-macro2 = "1.0.85"
 quote = "1.0.36"
 syn = "2.0.66"
-wars = { version = "0.2.0", path = "../wars" }
+wars = { version = "0.3.0", path = "../wars" }
 wat = "1.209.1"
 
 [dev-dependencies]
