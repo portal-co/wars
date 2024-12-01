@@ -1320,6 +1320,7 @@ dependencies = [
  "quote",
  "syn 2.0.77",
  "wars",
+ "wars-pit-plugin",
  "wars-rt",
  "wat",
 ]

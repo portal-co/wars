@@ -5,7 +5,7 @@ use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
 use syn::{parse::Parse, parse_macro_input, Ident, LitBool, Path, Token};
-use wars::{Flags, Opts, pit::PitPlugin, Plugin};
+use wars::{Flags, Opts, Plugin};
 
 struct O {
     pub crate_path: syn::Path,
@@ -15,7 +15,7 @@ struct O {
     pub embed: proc_macro2::TokenStream,
     pub data: BTreeMap<Ident, proc_macro2::TokenStream>, // pub cfg: Arc<dyn ImportCfg>,
     pub roots: BTreeMap<String, proc_macro2::TokenStream>,
-    pub plugins: Vec<Arc<dyn Plugin>>
+    pub plugins: Vec<Arc<dyn Plugin>>,
 }
 // struct NoopCfg {}
 // impl ImportCfg for NoopCfg {
@@ -35,8 +35,7 @@ impl Parse for O {
             embed: Default::default(),
             data: BTreeMap::new(),
             roots: BTreeMap::new(),
-            plugins: vec![]
-            // cfg: Arc::new(NoopCfg {}),
+            plugins: vec![], // cfg: Arc::new(NoopCfg {}),
         };
         while input.lookahead1().peek(Ident) {
             let i: Ident = input.parse()?;
@@ -87,7 +86,8 @@ impl Parse for O {
                 "lpit" => {
                     let b: LitBool = input.parse()?;
                     if b.value {
-                        o.plugins.push(Arc::new(PitPlugin::default()));
+                        o.plugins
+                            .push(Arc::new(wars_pit_plugin::PitPlugin::default()));
                     } else {
                         // o.flags &= Flags::PIT.complement();
                     }

@@ -22,7 +22,7 @@ use waffle::{
 #[derive(Default)]
 pub struct PitPlugin {
     pub tpit: OnceLock<BTreeSet<pit_core::Interface>>,
-    pub extra: Mutex<Vec<Arc<dyn PitPluginPlugin>>>,
+    pub extra: Vec<Arc<dyn PitPluginPlugin>>,
 }
 
 pub trait PitPluginPlugin {
@@ -32,6 +32,7 @@ pub trait PitPluginPlugin {
         opts: &Opts<Module<'static>>,
         i: &Interface,
         s: &str,
+        value: TokenStream,
         params: &[TokenStream],
     ) -> TokenStream;
     fn post(&self, parent: &PitPlugin, opts: &Opts<Module<'static>>) -> TokenStream;
@@ -49,7 +50,7 @@ impl PitPlugin {
     pub fn host_tpit(&self, opts: &Opts<Module<'static>>) -> TokenStream {
         let mut a = opts.host_tpit();
         let root = &opts.crate_path;
-        for e in self.extra.lock().unwrap().iter() {
+        for e in self.extra.iter() {
             if let Some(c) = e.choose_type(opts) {
                 a = quote! {
                     #root::Either<#c,#a>
@@ -67,12 +68,12 @@ impl PitPlugin {
         params: &[TokenStream],
     ) -> TokenStream {
         let root = &opts.crate_path;
-        for e in self.extra.lock().unwrap().iter() {
+        for e in self.extra.iter() {
             if let Some(c) = e.choose_type(opts) {
                 x = quasiquote! {
                     match host{
                         #root::Either::Right(host) => #x,
-                        #root::Either::Left(host) => #{e.emit_method(opts, i, s, params)},
+                        #root::Either::Left(host) => #{e.emit_method(opts, i, s, quote! {host}, params)},
                     }
                 };
             }
@@ -343,8 +344,6 @@ impl Plugin for PitPlugin {
         };
         let bs = self
             .extra
-            .lock()
-            .unwrap()
             .iter()
             .map(|x| x.post(self, opts))
             .collect::<Vec<_>>();
