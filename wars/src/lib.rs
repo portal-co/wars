@@ -657,7 +657,7 @@ impl Opts<Module<'static>> {
                                         let vn = (match #root::Memory::size(ctx.#m()){
                                             Ok(a) => a,
                                             Err(e) => return #{self.fp()}::ret(Err(e))
-                                        }) / 65536;
+                                        }) / #n;
                                         match #root::Memory::grow(ctx.#m(),(#a .clone() as u64) * #n){
                                             Ok(a) => a,
                                             Err(e) => return #{self.fp()}::ret(Err(e))
