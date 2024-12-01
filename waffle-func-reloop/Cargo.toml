@@ -1,6 +1,6 @@
 [package]
 name = "waffle-func-reloop"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2021"
 license = "CC0-1.0"
 description = "Utility for a Wasm to Rust converter"
