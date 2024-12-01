@@ -11,8 +11,7 @@ use relooper::{reloop, BranchMode, ShapedBlock};
 use sha3::Digest;
 use syn::{Ident, Lifetime};
 use waffle::{
-    cfg::CFGInfo, entity::EntityRef, Block, BlockTarget, Export, ExportKind, Func, ImportKind,
-    Memory, Module, Operator, Signature, SignatureData, Type, Value,
+    cfg::CFGInfo, entity::EntityRef, Block, BlockTarget, Export, ExportKind, Func, HeapType, ImportKind, Memory, Module, Operator, Signature, SignatureData, Type, Value, WithNullable
 };
 pub mod pit;
 
@@ -276,13 +275,16 @@ impl Opts<Module<'static>> {
             Type::F32 => quote! {f32},
             Type::F64 => quote! {f64},
             Type::V128 => quote! {u128},
-            Type::TypedFuncRef {
+            Type::Heap(WithNullable{
                 nullable,
-                sig_index,
-            } => {
+                value: HeapType::Sig{ sig_index}
+            }) if matches!(&self.module.signatures[sig_index],SignatureData::Func {..}) =>{
                 let data = &self.module.signatures[sig_index];
-                let params = data.params.iter().map(|x| self.render_ty(ctx, *x));
-                let returns = data.returns.iter().map(|x| self.render_ty(ctx, *x));
+                let SignatureData::Func { params, returns } = data else{
+                    unreachable!()
+                };
+                let params = params.iter().map(|x| self.render_ty(ctx, *x));
+                let returns = returns.iter().map(|x| self.render_ty(ctx, *x));
                 let mut x = if self.flags.contains(Flags::ASYNC) {
                     quote! {
                         #root::func::unsync::Df<#root::_rexport::tuple_list::tuple_list_type!(#(#params),*),#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*),#ctx>
@@ -304,15 +306,17 @@ impl Opts<Module<'static>> {
     }
     pub fn render_generics(&self, ctx: &TokenStream, data: &SignatureData) -> TokenStream {
         let root = self.crate_path.clone();
-        let params = data.params.iter().map(|x| self.render_ty(ctx, *x));
-        let param_ids = data
-            .params
+        let SignatureData::Func{params,returns} = data else{
+            todo!()
+        };
+        let params2 = params.iter().map(|x| self.render_ty(ctx, *x));
+        let param_ids = params
             .iter()
             .enumerate()
             .map(|(a, _)| format_ident!("p{a}"));
-        let returns = data.returns.iter().map(|x| self.render_ty(ctx, *x));
+        let returns = returns.iter().map(|x| self.render_ty(ctx, *x));
         quote! {
-            #root::_rexport::tuple_list::tuple_list_type!(#(#params),*),#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)
+            #root::_rexport::tuple_list::tuple_list_type!(#(#params2),*),#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)
         }
     }
     pub fn render_fn_sig(&self, name: Ident, data: &SignatureData) -> TokenStream {
@@ -320,20 +324,22 @@ impl Opts<Module<'static>> {
         let base = self.name.clone();
         let ctx = quote! {C};
         // let data = &self.module.signatures[sig_index];
-        let params = data.params.iter().map(|x| self.render_ty(&ctx, *x));
-        let param_ids = data
-            .params
+        let SignatureData::Func{params,returns} = data else{
+            todo!()
+        };
+        let params2 = params.iter().map(|x| self.render_ty(&ctx, *x));
+        let param_ids = params
             .iter()
             .enumerate()
             .map(|(a, _)| format_ident!("p{a}"));
-        let returns = data.returns.iter().map(|x| self.render_ty(&ctx, *x));
+        let returns = returns.iter().map(|x| self.render_ty(&ctx, *x));
         let mut x = if self.flags.contains(Flags::ASYNC) {
             quote! {
-                fn #name<'a,C: #base + 'static>(ctx: &'a mut C, #root::_rexport::tuple_list::tuple_list!(#(#param_ids),*): #root::_rexport::tuple_list::tuple_list_type!(#(#params),*)) -> #root::func::unsync::AsyncRec<'a,#root::_rexport::anyhow::Result<#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)>>
+                fn #name<'a,C: #base + 'static>(ctx: &'a mut C, #root::_rexport::tuple_list::tuple_list!(#(#param_ids),*): #root::_rexport::tuple_list::tuple_list_type!(#(#params2),*)) -> #root::func::unsync::AsyncRec<'a,#root::_rexport::anyhow::Result<#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)>>
             }
         } else {
             quote! {
-                fn #name<'a,C: #base + 'static>(ctx: &'a mut C, #root::_rexport::tuple_list::tuple_list!(#(#param_ids),*): #root::_rexport::tuple_list::tuple_list_type!(#(#params),*)) -> #root::_rexport::tramp::BorrowRec<'a,#root::_rexport::anyhow::Result<#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)>>
+                fn #name<'a,C: #base + 'static>(ctx: &'a mut C, #root::_rexport::tuple_list::tuple_list!(#(#param_ids),*): #root::_rexport::tuple_list::tuple_list_type!(#(#params2),*)) -> #root::_rexport::tramp::BorrowRec<'a,#root::_rexport::anyhow::Result<#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)>>
             }
         };
         if let Some(t) = self.roots.get("tracing") {
@@ -367,54 +373,58 @@ impl Opts<Module<'static>> {
         wrapped: Ident,
         data: &SignatureData,
     ) -> TokenStream {
+        let SignatureData::Func{params,returns} = data else{
+            todo!()
+        };
         let root = self.crate_path.clone();
         let base = self.name.clone();
         let ctx = quote! {Self};
         // let data = &self.module.signatures[sig_index];
-        let params = data.params.iter().map(|x| self.render_ty(&ctx, *x));
-        let param_ids = data
-            .params
+        let params2 = params.iter().map(|x| self.render_ty(&ctx, *x));
+        let param_ids = params
             .iter()
             .enumerate()
             .map(|(a, _)| format_ident!("p{a}"))
             .collect::<Vec<_>>();
 
-        let returns = data.returns.iter().map(|x| self.render_ty(&ctx, *x));
+        let returns = returns.iter().map(|x| self.render_ty(&ctx, *x));
         if self.flags.contains(Flags::ASYNC) {
             quote! {
-                fn #name<'a>(self: &'a mut Self, #root::_rexport::tuple_list::tuple_list!(#(#param_ids),*): #root::_rexport::tuple_list::tuple_list_type!(#(#params),*)) -> #root::func::unsync::AsyncRec<'a,#root::_rexport::anyhow::Result<#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)>> where Self: 'static{
+                fn #name<'a>(self: &'a mut Self, #root::_rexport::tuple_list::tuple_list!(#(#param_ids),*): #root::_rexport::tuple_list::tuple_list_type!(#(#params2),*)) -> #root::func::unsync::AsyncRec<'a,#root::_rexport::anyhow::Result<#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)>> where Self: 'static{
                     return #wrapped(self,#root::_rexport::tuple_list::tuple_list!(#(#param_ids),*));
                 }
             }
         } else {
             quote! {
-                fn #name<'a>(self: &'a mut Self, #root::_rexport::tuple_list::tuple_list!(#(#param_ids),*): #root::_rexport::tuple_list::tuple_list_type!(#(#params),*)) -> #root::_rexport::tramp::BorrowRec<'a,#root::_rexport::anyhow::Result<#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)>> where Self: 'static{
+                fn #name<'a>(self: &'a mut Self, #root::_rexport::tuple_list::tuple_list!(#(#param_ids),*): #root::_rexport::tuple_list::tuple_list_type!(#(#params2),*)) -> #root::_rexport::tramp::BorrowRec<'a,#root::_rexport::anyhow::Result<#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)>> where Self: 'static{
                     return #wrapped(self,#root::_rexport::tuple_list::tuple_list!(#(#param_ids),*));
                 }
             }
         }
     }
     pub fn render_self_sig_import(&self, name: Ident, data: &SignatureData) -> TokenStream {
+        let SignatureData::Func{params,returns} = data else{
+            todo!()
+        };
         let root = self.crate_path.clone();
         let base = self.name.clone();
         let ctx = quote! {Self};
         // let data = &self.module.signatures[sig_index];
-        let params = data.params.iter().map(|x| self.render_ty(&ctx, *x));
-        let param_ids = data
-            .params
+        let params2 = params.iter().map(|x| self.render_ty(&ctx, *x));
+        let param_ids = params
             .iter()
             .enumerate()
             .map(|(a, _)| format_ident!("p{a}"))
             .collect::<Vec<_>>();
 
-        let returns = data.returns.iter().map(|x| self.render_ty(&ctx, *x));
+        let returns = returns.iter().map(|x| self.render_ty(&ctx, *x));
         if self.flags.contains(Flags::ASYNC) {
             quote! {
-                fn #name<'a>(self: &'a mut Self, imp: #root::_rexport::tuple_list::tuple_list_type!(#(#params),*)) -> #root::func::unsync::AsyncRec<'a,#root::_rexport::anyhow::Result<#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)>> where Self: 'static;
+                fn #name<'a>(self: &'a mut Self, imp: #root::_rexport::tuple_list::tuple_list_type!(#(#params2),*)) -> #root::func::unsync::AsyncRec<'a,#root::_rexport::anyhow::Result<#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)>> where Self: 'static;
             }
         } else {
             quote! {
-                fn #name<'a>(self: &'a mut Self, imp: #root::_rexport::tuple_list::tuple_list_type!(#(#params),*)) -> #root::_rexport::tramp::BorrowRec<'a,#root::_rexport::anyhow::Result<#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)>> where Self: 'static;
+                fn #name<'a>(self: &'a mut Self, imp: #root::_rexport::tuple_list::tuple_list_type!(#(#params2),*)) -> #root::_rexport::tramp::BorrowRec<'a,#root::_rexport::anyhow::Result<#root::_rexport::tuple_list::tuple_list_type!(#(#returns),*)>> where Self: 'static;
             }
         }
     }
@@ -1013,6 +1023,7 @@ impl Opts<Module<'static>> {
                         unreachable!()
                     },
                     waffle::Terminator::None => panic!("none block terminator"),
+                    _ => todo!()
                 };
 
                 let immediate = s
@@ -1099,8 +1110,10 @@ impl Opts<Module<'static>> {
         let Some(b) = self.module.funcs[f].body() else {
             let fsig = self.module.funcs[f].sig();
             let fsig = &self.module.signatures[fsig];
-            let params = fsig
-                .params
+            let SignatureData::Func{params,returns} = fsig else{
+                todo!()
+            };
+            let params = params
                 .iter()
                 .enumerate()
                 .map(|(a, _)| format_ident!("p{a}"));
@@ -1141,10 +1154,10 @@ impl Opts<Module<'static>> {
         let bpvalues = b.blocks.entries().flat_map(|(k, d)| {
             d.params.iter().enumerate().map(move |(i, (ty, _))| {
                 let x = match ty {
-                    Type::TypedFuncRef {
+                    Type::Heap(WithNullable{
                         nullable,
-                        sig_index,
-                    } if !nullable => self.render_fun_ref(&quote! {C}, Func::invalid()),
+                        value: HeapType::Sig { sig_index },
+                    }) if !nullable => self.render_fun_ref(&quote! {C}, Func::invalid()),
                     _ => quote! {
                         Default::default()
                     },
@@ -1541,6 +1554,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                 };
                 fs.push(i);
             }
+            _ => todo!()
         }
     }
     for i in opts.module.imports.iter() {
@@ -1569,9 +1583,12 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
         }
         if let ImportKind::Func(f) = &i.kind {
             for plugin in opts.plugins.iter(){
-                if plugin.import(&opts,&i.module,&i.name,opts.module.signatures[opts.module.funcs[*f].sig()].params.iter().map(
-                    |_|quote!{}
-                ).collect()).is_some(){
+                if plugin.import(&opts,&i.module,&i.name,match &opts.module.signatures[opts.module.funcs[*f].sig()]{
+                    SignatureData::Func { params, returns } => params.iter().map(
+                        |_|quote!{}
+                    ).collect(),
+                    _ => todo!()
+                }).is_some(){
                     continue;
                 }
             }

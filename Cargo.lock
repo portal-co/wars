@@ -110,9 +110,9 @@ checksum = "b3d1d046238990b9cf5bcde22a3fb3584ee5cf65fb2765f454ed428c7a0063da"
 
 [[package]]
 name = "arena-traits"
-version = "0.1.2"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33fdeadfcf04c197a228febcc9550d95e28f3c8e20e045fca3a5bbb36582737e"
+checksum = "9124fa70d5ebbb2f2bef340dbaa0c5186a2df7ca66be5edd806f1e46383b6a09"
 
 [[package]]
 name = "atty"
@@ -202,6 +202,26 @@ name = "cfg-if"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
+
+[[package]]
+name = "cfg-traits"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c561f6cffa35f03f4dc575407362fa291e3c97028470e6814df022bbd4d294ef"
+dependencies = [
+ "arena-traits",
+ "either",
+]
+
+[[package]]
+name = "cfg-traits"
+version = "0.3.0-alpha.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d599ee7a04d8b5e63138bf0740dfe0f77cc7615f9dfb96fd569c3f0cedc3d6a6"
+dependencies = [
+ "arena-traits",
+ "either",
+]
 
 [[package]]
 name = "clap"
@@ -364,6 +384,35 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.77",
+]
+
+[[package]]
+name = "ext-trait"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d772df1c1a777963712fb68e014235e80863d6a91a85c4e06ba2d16243a310e5"
+dependencies = [
+ "ext-trait-proc_macros",
+]
+
+[[package]]
+name = "ext-trait-proc_macros"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ab7934152eaf26aa5aa9f7371408ad5af4c31357073c9e84c3b9d7f11ad639a"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "extension-traits"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a296e5a895621edf9fa8329c83aa1cb69a964643e36cf54d8d7a69b789089537"
+dependencies = [
+ "ext-trait",
 ]
 
 [[package]]
@@ -565,6 +614,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "884e2677b40cc8c339eaefcb701c32ef1fd2493d71118dc0ca4b6a736c93bd67"
 
 [[package]]
+name = "lending-iterator"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc07588c853b50689205fb5c00498aa681d89828e0ce8cbd965ebc7a5d8ae260"
+dependencies = [
+ "extension-traits",
+ "lending-iterator-proc_macros",
+ "macro_rules_attribute",
+ "never-say-never",
+ "nougat",
+ "polonius-the-crab",
+]
+
+[[package]]
+name = "lending-iterator-proc_macros"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5445dd1c0deb1e97b8a16561d17fc686ca83e8411128fb036e9668a72d51b1d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.158"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -585,6 +659,22 @@ name = "log"
 version = "0.4.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
+
+[[package]]
+name = "macro_rules_attribute"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf0c9b980bf4f3a37fd7b1c066941dd1b1d0152ce6ee6e8fe8c49b9f6810d862"
+dependencies = [
+ "macro_rules_attribute-proc_macro",
+ "paste",
+]
+
+[[package]]
+name = "macro_rules_attribute-proc_macro"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "58093314a45e00c77d5c508f76e77c3396afbbc0d01506e7fae47b018bac2b1d"
 
 [[package]]
 name = "memchr"
@@ -617,6 +707,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "never-say-never"
+version = "6.6.666"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf5a574dadd7941adeaa71823ecba5e28331b8313fb2e1c6a5c7e5981ea53ad6"
+
+[[package]]
 name = "nom"
 version = "7.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -624,6 +720,27 @@ checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
 dependencies = [
  "memchr",
  "minimal-lexical",
+]
+
+[[package]]
+name = "nougat"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97b57b9ced431322f054fc673f1d3c7fa52d80efd9df74ad2fc759f044742510"
+dependencies = [
+ "macro_rules_attribute",
+ "nougat-proc_macros",
+]
+
+[[package]]
+name = "nougat-proc_macros"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c84f77a45e99a2f9b492695d99e1c23844619caa5f3e57647cffacad773ca257"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -661,9 +778,9 @@ dependencies = [
 
 [[package]]
 name = "pit-core"
-version = "0.1.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f5c88f34a04a10a25f3cc2c7aab5004d65cb05f58765a6e0bae9d5c6cf36638"
+checksum = "0dd0f42778a4c95ee6e1e715c6131fda5328b7a82843c67b8059a30f7f939c6a"
 dependencies = [
  "derive_more",
  "hex",
@@ -673,9 +790,9 @@ dependencies = [
 
 [[package]]
 name = "pit-patch"
-version = "0.1.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d2deff5af8f3693f2066cc63e1d4953e5e69facbafed5785b71dde05e30ab8d"
+checksum = "a9925a937686ca11c750f120df100926375c7e46ce2cb6930440fd5a68625ab4"
 dependencies = [
  "anyhow",
  "hex",
@@ -688,9 +805,9 @@ dependencies = [
 
 [[package]]
 name = "pit-rust-guest"
-version = "0.1.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8310ad96a622945d1b51522e6d5e41b77abe011b4d075f2d790e1a102fe49fc"
+checksum = "7595393e7f5acc55f271045ea92cc162dc1af7f571a10762069665af262d4b2c"
 dependencies = [
  "hex",
  "pit-core",
@@ -702,6 +819,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "polonius-the-crab"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c2a69ee997a6282f8462abf1e0d8c38c965e968799e912b3bed8c9e8a28c2f9f"
+
+[[package]]
 name = "portal-pc-tramp"
 version = "0.3.0+portal"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -709,25 +832,29 @@ checksum = "afdf2639d3c2fa0b91cdd20b8acacfa2b3da41e297906a93bbb47b88ed10e5f6"
 
 [[package]]
 name = "portal-pc-waffle"
-version = "0.1.1+portal"
+version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b96b5d6a6b8a63b785db384d2f05f24d4c236de48541c7d4bd2935a21e20aa5"
+checksum = "5b3579534cbfe76740b441af1339d6ae0d69f46f07c2a620caea187e7ebec6aa"
 dependencies = [
  "addr2line",
  "anyhow",
  "arena-traits",
+ "cfg-traits 0.2.1",
+ "cfg-traits 0.3.0-alpha.0",
  "either",
  "env_logger",
  "fxhash",
  "indexmap 2.5.0",
  "lazy_static",
+ "lending-iterator",
  "libc",
  "log",
  "paste",
  "rayon",
  "serde",
  "smallvec",
- "ssa-traits",
+ "ssa-traits 0.2.1",
+ "ssa-traits 0.3.0-alpha.0",
  "stacker",
  "structopt",
  "wasm-encoder 0.212.0",
@@ -973,13 +1100,27 @@ dependencies = [
 
 [[package]]
 name = "ssa-traits"
-version = "0.1.3"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a15f32129ee532d9a415a25d2ba519acbc12214b22459b6edcd13b3d121ea6c"
+checksum = "d0b5d4195261ebb69852c6e5ea82688edbec5f8d4e177897a209014d273421fa"
 dependencies = [
  "anyhow",
  "arena-traits",
+ "cfg-traits 0.2.1",
  "either",
+]
+
+[[package]]
+name = "ssa-traits"
+version = "0.3.0-alpha.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "361fc58338790e74a8b5d46fa85605eb9d22933ffabece833c46f604e29803c3"
+dependencies = [
+ "anyhow",
+ "arena-traits",
+ "cfg-traits 0.3.0-alpha.0",
+ "either",
+ "lending-iterator",
 ]
 
 [[package]]
@@ -1134,9 +1275,9 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "waffle-ast"
-version = "0.2.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd7badee256e0dc022ed01bc402f7b14dd11cae326d0a28b3d48b621252e17ab"
+checksum = "e6314d8bc49885e4ad317b19a99b7048f0321ea0305b251797b4fcfd5100f437"
 dependencies = [
  "anyhow",
  "bimap",

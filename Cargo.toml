@@ -4,4 +4,4 @@ resolver="2"
 
 [workspace.dependencies]
 
-portal-pc-waffle = {version="0.1.1+portal"}
+portal-pc-waffle = {version="0.3.4"}
