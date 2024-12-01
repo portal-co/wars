@@ -581,7 +581,7 @@ checksum = "7943c866cc5cd64cbc25b2e01621d07fa8eb2a1a23160ee81ce38704e97b8ecf"
 
 [[package]]
 name = "isovariant"
-version = "0.4.1"
+version = "0.4.2"
 
 [[package]]
 name = "itertools"
@@ -1286,7 +1286,7 @@ dependencies = [
 
 [[package]]
 name = "waffle-func-reloop"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "portal-pc-waffle",
  "relooper",
@@ -1294,7 +1294,7 @@ dependencies = [
 
 [[package]]
 name = "wars"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "bitflags 2.6.0",
  "hex",
@@ -1313,7 +1313,7 @@ dependencies = [
 
 [[package]]
 name = "wars-macro"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "expander",
  "proc-macro2",
@@ -1326,7 +1326,7 @@ dependencies = [
 
 [[package]]
 name = "wars-rt"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "anyhow",
  "castaway",
@@ -1342,7 +1342,7 @@ dependencies = [
 
 [[package]]
 name = "wars-test"
-version = "0.4.1"
+version = "0.4.2"
 
 [[package]]
 name = "wasm-encoder"
