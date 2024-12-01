@@ -627,12 +627,16 @@ impl Opts<Module<'static>> {
                                     }else{
                                         quote! {u32}
                                     };
+                                    let n = match &self.module.memories[*mem].page_size_log2{
+                                        None => 65536usize,
+                                        Some(a) => 2usize.pow(*a)
+                                    };
                                     let m = Ident::new(&mem.to_string(), Span::call_site());
                                     quasiquote! {
                                         #root::_rexport::tuple_list::tuple_list!(((match #root::Memory::size(ctx.#m()){
                                             Ok(a) => a,
                                             Err(e) => return #{self.fp()}::ret(Err(e))
-                                        }) / 65536) as #rt)
+                                        }) / #n) as #rt)
                                     }
                                 }
                                 waffle::Operator::MemoryGrow { mem } => {
@@ -644,13 +648,17 @@ impl Opts<Module<'static>> {
                                     }else{
                                         quote! {u32}
                                     };
+                                    let n = match &self.module.memories[*mem].page_size_log2{
+                                        None => 65536usize,
+                                        Some(a) => 2usize.pow(*a)
+                                    };
                                     quasiquote! {
                                         {
                                         let vn = (match #root::Memory::size(ctx.#m()){
                                             Ok(a) => a,
                                             Err(e) => return #{self.fp()}::ret(Err(e))
                                         }) / 65536;
-                                        match #root::Memory::grow(ctx.#m(),(#a .clone() as u64) * 65536){
+                                        match #root::Memory::grow(ctx.#m(),(#a .clone() as u64) * #n){
                                             Ok(a) => a,
                                             Err(e) => return #{self.fp()}::ret(Err(e))
                                         };
