@@ -187,31 +187,31 @@ impl<T: Memory> Memory for Arc<spin::Mutex<T>> {
         return l.grow(x);
     }
 }
-pub unsafe fn host_memory() -> impl Memory {
-    struct W {}
-    impl Memory for W {
-        fn read<'a>(&'a self, a: u64, s: u64) -> anyhow::Result<Box<dyn AsRef<[u8]> + 'a>> {
-            return Ok(Box::new(unsafe {
-                core::slice::from_raw_parts(a as usize as *const u8, s as usize)
-            }));
-        }
+// pub unsafe fn host_memory() -> impl Memory {
+//     struct W {}
+//     impl Memory for W {
+//         fn read<'a>(&'a self, a: u64, s: u64) -> anyhow::Result<Box<dyn AsRef<[u8]> + 'a>> {
+//             return Ok(Box::new(unsafe {
+//                 core::slice::from_raw_parts(a as usize as *const u8, s as usize)
+//             }));
+//         }
 
-        fn write(&mut self, a: u64, x: &[u8]) -> anyhow::Result<()> {
-            let n = unsafe { core::slice::from_raw_parts_mut(a as usize as *mut u8, x.len()) };
-            n.copy_from_slice(x);
-            return Ok(());
-        }
+//         fn write(&mut self, a: u64, x: &[u8]) -> anyhow::Result<()> {
+//             let n = unsafe { core::slice::from_raw_parts_mut(a as usize as *mut u8, x.len()) };
+//             n.copy_from_slice(x);
+//             return Ok(());
+//         }
 
-        fn size(&self) -> Result<u64, anyhow::Error> {
-            anyhow::bail!("host memory cannot use size")
-        }
+//         fn size(&self) -> Result<u64, anyhow::Error> {
+//             anyhow::bail!("host memory cannot use size")
+//         }
 
-        fn grow(&mut self, x: u64) -> anyhow::Result<()> {
-            anyhow::bail!("host memory cannot use grow")
-        }
-    }
-    return W {};
-}
+//         fn grow(&mut self, x: u64) -> anyhow::Result<()> {
+//             anyhow::bail!("host memory cannot use grow")
+//         }
+//     }
+//     return W {};
+// }
 pub mod _rexport {
     pub use anyhow;
     pub use tramp;
