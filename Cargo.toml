@@ -1,5 +1,5 @@
 [workspace]
-members=[ "wars",  "wars-macro","wars-rt", "wars-test","isovariant"]
+members=[ "wars",  "wars-macro","wars-rt", "wars-test","isovariant", "wars-pit-plugin"]
 resolver="2"
 
 [workspace.dependencies]
