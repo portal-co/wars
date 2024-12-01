@@ -37,11 +37,11 @@ pub trait Plugin{
 bitflags::bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
     pub struct Flags: u32{
-        const HOST_MEMORY = 0x1;
+        // const HOST_MEMORY = 0x1;
         const ASYNC = 0x2;
         const LEGACY = 0x4;
-        const WASIX = 0x8;
-        const BIND = 0x10;
+        // const WASIX = 0x8;
+        // const BIND = 0x10;
         // const PIT = 0x20;
         // const UNSANDBOXED = 0x2;
     }
@@ -103,28 +103,28 @@ impl Opts<Module<'static>> {
             .iter()
             .find(|x| x.kind == ImportKind::Memory(m))
         {
-            if i.module == "!!unsafe" && i.name == "host" && self.flags.contains(Flags::HOST_MEMORY)
-            {
-                return quote! {
-                    unsafe{
-                        ::std::slice::from_raw_parts_mut(::std::ptr::null(),usize::MAX)
-                    }
-                };
-            }
+            // if i.module == "!!unsafe" && i.name == "host" && self.flags.contains(Flags::HOST_MEMORY)
+            // {
+            //     return quote! {
+            //         unsafe{
+            //             ::std::slice::from_raw_parts_mut(::std::ptr::null(),usize::MAX)
+            //         }
+            //     };
+            // }
             for p in self.plugins.iter(){
             if let Some(i) = p.mem_import(self, &i.module, &i.name){
                 return quasiquote!(#{i.expr});
             }
             }
-            if self.flags.contains(Flags::WASIX) {
-                if i.module == "wasi_snapshot_preview1" || i.module == "wasix_32v1" {
-                    if i.name == "memory" {
-                        return quote! {
-                            ctx.wasix_memory()
-                        };
-                    }
-                }
-            }
+            // if self.flags.contains(Flags::WASIX) {
+            //     if i.module == "wasi_snapshot_preview1" || i.module == "wasix_32v1" {
+            //         if i.name == "memory" {
+            //             return quote! {
+            //                 ctx.wasix_memory()
+            //             };
+            //         }
+            //     }
+            // }
         }
         let m2 = format_ident!("{m}");
         quote! {
@@ -146,54 +146,54 @@ impl Opts<Module<'static>> {
         let mut params = params.into_iter();
         let root = self.crate_path.clone();
         // if self.flags.contains(Flags::UNSANDBOXED) {
-        if self.flags.contains(Flags::HOST_MEMORY) {
-            if let Some(a) = module.strip_prefix("!!unsafe/"){
-                if a == "linux"{
-                    if let Some(s) = name.strip_prefix("syscall"){
-                        if let Some((s,_)) = s.split_once("/"){
-                            if let Some(l) = self.roots.get("linux-syscall"){
-                                return quasiquote! {
-                                    #{self.fp()}::ret(match #l::syscall!(#l::#{format_ident!("SYS_{s}")}, #(#params),*).try_usize(){
-                                        Ok(a) => Ok(a as u64),
-                                        Err(e) => Err(e.into())
-                                    })
-                                };
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        if self.flags.contains(Flags::WASIX) {
-            if module == "wasi_snapshot_preview1" || module == "wasix_32v1" {
-                return quasiquote! {
-                    #root::wasix::#{format_ident!("{name}")}(#(#params),*)
-                };
-            }
-        }
-        if self.flags.contains(Flags::BIND) {
-            if module == "wars/bind" {
-                if name == "!!drop" {
-                    return quasiquote! {
-                        {
-                            let v = self.data().rust_table.remove(#(#params),*).unwrap();
-                            Ok(())
-                        }
-                    };
-                }
-                let params = params.collect::<Vec<_>>();
-                return quasiquote! {
-                    {
-                        let v = #{syn::parse_str::<TokenStream>(&name).unwrap()}(#(unsafe{#root::get_cell(self.data().rust_table.get(&#params)).unwrap()}),*)#{if self.flags.contains(Flags::ASYNC){
-                            quote!{.await}
-                        }else{
-                            quote!{}
-                        }};
-                        v.map(|x|(alloc(&mut self.data().rust_table,#root::any_cell(x)),()))
-                    }
-                };
-            }
-        }
+        // if self.flags.contains(Flags::HOST_MEMORY) {
+        //     if let Some(a) = module.strip_prefix("!!unsafe/"){
+        //         if a == "linux"{
+        //             if let Some(s) = name.strip_prefix("syscall"){
+        //                 if let Some((s,_)) = s.split_once("/"){
+        //                     if let Some(l) = self.roots.get("linux-syscall"){
+        //                         return quasiquote! {
+        //                             #{self.fp()}::ret(match #l::syscall!(#l::#{format_ident!("SYS_{s}")}, #(#params),*).try_usize(){
+        //                                 Ok(a) => Ok(a as u64),
+        //                                 Err(e) => Err(e.into())
+        //                             })
+        //                         };
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+        // if self.flags.contains(Flags::WASIX) {
+        //     if module == "wasi_snapshot_preview1" || module == "wasix_32v1" {
+        //         return quasiquote! {
+        //             #root::wasix::#{format_ident!("{name}")}(#(#params),*)
+        //         };
+        //     }
+        // }
+        // if self.flags.contains(Flags::BIND) {
+        //     if module == "wars/bind" {
+        //         if name == "!!drop" {
+        //             return quasiquote! {
+        //                 {
+        //                     let v = self.data().rust_table.remove(#(#params),*).unwrap();
+        //                     Ok(())
+        //                 }
+        //             };
+        //         }
+        //         let params = params.collect::<Vec<_>>();
+        //         return quasiquote! {
+        //             {
+        //                 let v = #{syn::parse_str::<TokenStream>(&name).unwrap()}(#(unsafe{#root::get_cell(self.data().rust_table.get(&#params)).unwrap()}),*)#{if self.flags.contains(Flags::ASYNC){
+        //                     quote!{.await}
+        //                 }else{
+        //                     quote!{}
+        //                 }};
+        //                 v.map(|x|(alloc(&mut self.data().rust_table,#root::any_cell(x)),()))
+        //             }
+        //         };
+        //     }
+        // }
         //     if a == "fs" {
         //         match name {
         //             "open" => {
@@ -1330,13 +1330,13 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
             #k : #v
         });
     }
-    if (opts.flags.contains(Flags::BIND)) {
-        let k = format_ident!("rust_table");
-        fields.push(k.clone());
-        z.push(quasiquote! {
-            #k:  #{opts.alloc()}::collections::BTreeMap<u32,AnyCell>,
-        })
-    }
+    // if (opts.flags.contains(Flags::BIND)) {
+    //     let k = format_ident!("rust_table");
+    //     fields.push(k.clone());
+    //     z.push(quasiquote! {
+    //         #k:  #{opts.alloc()}::collections::BTreeMap<u32,AnyCell>,
+    //     })
+    // }
     let mut init = vec![];
     for (t, d) in opts.module.tables.entries() {
         // let dty = opts.render_ty(&quote! {Target}, d.ty.clone());
@@ -1423,12 +1423,13 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                 });
             }
             Some((a, b)) => {
-                if a == "!!unsafe" && b == "host" && opts.flags.contains(Flags::HOST_MEMORY) {
-                } else if (a == "wasi_snapshot_preview1" || a == "wasix_32v1")
-                    && b == "memory"
-                    && opts.flags.contains(Flags::WASIX)
-                {
-                }else if opts.plugins.iter().any(|p|p.mem_import(&opts, &a, &b).is_some()){
+                // if a == "!!unsafe" && b == "host" && opts.flags.contains(Flags::HOST_MEMORY) {
+                // } else if (a == "wasi_snapshot_preview1" || a == "wasix_32v1")
+                //     && b == "memory"
+                //     && opts.flags.contains(Flags::WASIX)
+                // {
+                // }else
+                 if opts.plugins.iter().any(|p|p.mem_import(&opts, &a, &b).is_some()){
                 // } else if a.starts_with("pit") && opts.flags.contains(Flags::PIT) {
                 } else {
                     // let a = bindname(&a);
@@ -1558,29 +1559,29 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
         }
     }
     for i in opts.module.imports.iter() {
-        if i.module.starts_with(INTRINSIC) {
-            continue;
-        }
-        if opts.flags.contains(Flags::WASIX) {
-            if i.module == "wasi_snapshot_preview1" || i.module == "wasix_32v1" {
-                continue;
-            }
-        }
-        if opts.flags.contains(Flags::BIND) {
-            if i.module == "wars/bind" {
-                continue;
-            }
-        }
-        // if opts.flags.contains(Flags::PIT) {
-        //     if i.module.starts_with("pit") {
+        // if i.module.starts_with(INTRINSIC) {
+        //     continue;
+        // }
+        // if opts.flags.contains(Flags::WASIX) {
+        //     if i.module == "wasi_snapshot_preview1" || i.module == "wasix_32v1" {
         //         continue;
         //     }
         // }
-        if opts.flags.contains(Flags::HOST_MEMORY){
-            if i.module.starts_with("!!unsafe"){
-                continue;
-            }
-        }
+        // if opts.flags.contains(Flags::BIND) {
+        //     if i.module == "wars/bind" {
+        //         continue;
+        //     }
+        // }
+        // // if opts.flags.contains(Flags::PIT) {
+        // //     if i.module.starts_with("pit") {
+        // //         continue;
+        // //     }
+        // // }
+        // if opts.flags.contains(Flags::HOST_MEMORY){
+        //     if i.module.starts_with("!!unsafe"){
+        //         continue;
+        //     }
+        // }
         if let ImportKind::Func(f) = &i.kind {
             for plugin in opts.plugins.iter(){
                 if plugin.import(&opts,&i.module,&i.name,match &opts.module.signatures[opts.module.funcs[*f].sig()]{
@@ -1666,11 +1667,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                 quote! {+ Send + Sync}
             }else{
                 quote! {}
-            }} #{if opts.flags.contains(Flags::WASIX){
-                quote!{+ #root::wasix::XSpec}
-            }else{
-                quote! {}
-            }} #{
+            }}  #{
                 let a = opts.plugins.iter().map(|p|{
                     let b = p.bounds(&opts);
                     match b{
