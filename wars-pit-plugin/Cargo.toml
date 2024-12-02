@@ -20,3 +20,4 @@ pit-core = "0.3.2"
 pit-patch = "0.3.2"
 pit-rust-guest = "0.3.2"
 wars = { version = "0.4.3", path = "../wars" }
+anyhow = "1.0.93"

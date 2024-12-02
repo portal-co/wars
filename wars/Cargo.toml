@@ -23,3 +23,4 @@ waffle-func-reloop = { version = "0.4.0", path = "../waffle-func-reloop" }
 pit-core = "0.3.2"
 pit-patch = "0.3.2"
 pit-rust-guest = "0.3.2"
+anyhow = "1.0.93"

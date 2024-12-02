@@ -1,4 +1,3 @@
-use wars::*;
 use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet},
@@ -7,6 +6,7 @@ use std::{
     iter::once,
     sync::{Arc, Mutex, OnceLock},
 };
+use wars::*;
 
 use pit_core::{Arg, Interface};
 use proc_macro2::{Span, TokenStream};
@@ -26,7 +26,7 @@ pub struct PitPlugin {
 }
 
 pub trait PitPluginPlugin {
-    fn choose_type(&self, opts: &Opts<Module<'static>>) -> Option<TokenStream>;
+    fn choose_type(&self, opts: &Opts<Module<'static>>) -> anyhow::Result<Option<TokenStream>>;
     fn emit_method(
         &self,
         opts: &Opts<Module<'static>>,
@@ -34,8 +34,9 @@ pub trait PitPluginPlugin {
         s: &str,
         value: TokenStream,
         params: &[TokenStream],
-    ) -> TokenStream;
-    fn post(&self, parent: &PitPlugin, opts: &Opts<Module<'static>>) -> TokenStream;
+    ) -> anyhow::Result<TokenStream>;
+    fn post(&self, parent: &PitPlugin, opts: &Opts<Module<'static>>)
+        -> anyhow::Result<TokenStream>;
 }
 
 impl PitPlugin {
@@ -47,17 +48,17 @@ impl PitPlugin {
                 .collect()
         });
     }
-    pub fn host_tpit(&self, opts: &Opts<Module<'static>>) -> TokenStream {
+    pub fn host_tpit(&self, opts: &Opts<Module<'static>>) -> anyhow::Result<TokenStream> {
         let mut a = opts.host_tpit();
         let root = &opts.crate_path;
         for e in self.extra.iter() {
-            if let Some(c) = e.choose_type(opts) {
+            if let Some(c) = e.choose_type(opts)? {
                 a = quote! {
                     #root::Either<#c,#a>
                 };
             }
         }
-        return a;
+        return Ok(a);
     }
     pub fn apply_host(
         &self,
@@ -66,29 +67,46 @@ impl PitPlugin {
         i: &Interface,
         s: &str,
         params: &[TokenStream],
-    ) -> TokenStream {
+    ) -> anyhow::Result<TokenStream> {
         let root = &opts.crate_path;
         for e in self.extra.iter() {
-            if let Some(c) = e.choose_type(opts) {
+            if let Some(c) = e.choose_type(opts)? {
                 x = quasiquote! {
                     match host{
                         #root::Either::Right(host) => #x,
-                        #root::Either::Left(host) => #{e.emit_method(opts, i, s, quote! {host}, params)},
+                        #root::Either::Left(host) => #{e.emit_method(opts, i, s, quote! {host}, params)?},
                     }
                 };
             }
         }
-        return x;
+        return Ok(x);
+    }
+    pub fn wrap(
+        &self,
+        opts: &Opts<Module<'static>>,
+        mut x: TokenStream,
+    ) -> anyhow::Result<TokenStream> {
+        let root = &opts.crate_path;
+        for e in self.extra.iter() {
+            if let Some(c) = e.choose_type(opts)? {
+                x = quasiquote! {
+                    #root::Either::Right(#x)
+                };
+            }
+        }
+        return Ok(x);
     }
 }
 impl Plugin for PitPlugin {
-    fn exref_bounds(&self, opts: &Opts<Module<'static>>) -> Option<TokenStream> {
+    fn exref_bounds(&self, opts: &Opts<Module<'static>>) -> anyhow::Result<Option<TokenStream>> {
         let root = &opts.crate_path;
-        Some(
-            quasiquote! {From<#root::Pit<Vec<#{opts.fp()}::Value<Self>>,#{self.host_tpit(opts)}>> + TryInto<#root::Pit<Vec<#{opts.fp()}::Value<Self>>,#{self.host_tpit(opts)}>>},
-        )
+        Ok(Some(
+            quasiquote! {From<#root::Pit<Vec<#{opts.fp()}::Value<Self>>,#{self.host_tpit(opts)?}>> + TryInto<#root::Pit<Vec<#{opts.fp()}::Value<Self>>,#{self.host_tpit(opts)?}>>},
+        ))
     }
-    fn pre(&self, module: &mut Module<'static>) {}
+    fn pre(&self, module: &mut Module<'static>) -> anyhow::Result<()> {
+        Ok(())
+    }
 
     fn import(
         &self,
@@ -96,7 +114,7 @@ impl Plugin for PitPlugin {
         module: &str,
         name: &str,
         params: Vec<TokenStream>,
-    ) -> Option<TokenStream> {
+    ) -> anyhow::Result<Option<TokenStream>> {
         let root = &opts.crate_path;
         let mut params = params.into_iter();
         if let Some(i) = module.strip_prefix("pit/") {
@@ -107,13 +125,13 @@ impl Plugin for PitPlugin {
                     h.update(s);
                     h.finalize()
                 };
-                return Some(quasiquote! {
+                return Ok(Some(quasiquote! {
                     #{opts.fp()}::ret(Ok(#{opts.fp()}::Value::<C>::ExternRef(#root::Pit::Guest{
                         id: [#(#x),*],
                         x: #{opts.fp()}::CoeVec::coe(#root::tuple_list::tuple_list!(#(#params),*)),
                         s: [#(#s),*],
                     }.into())))
-                });
+                }));
             }
 
             let mut f = params.next().unwrap();
@@ -143,7 +161,7 @@ impl Plugin for PitPlugin {
                 });
             let interface = self.tpit(opts).iter().find(|a| a.rid() == x);
             let meth = interface.and_then(|a| a.methods.get(name));
-            return Some(quasiquote! {
+            return Ok(Some(quasiquote! {
                 'a: {
                     let x = #f;
                     let #{opts.fp()}::Value::<C>::ExternRef(x) = x else{
@@ -200,11 +218,11 @@ impl Plugin for PitPlugin {
                                     }
                                 })));
                             }
-                        };self.apply_host(t,opts,interface.unwrap(),name,&params)}
+                        };self.apply_host(t,opts,interface.unwrap(),name,&params)?}
             _ => todo!()
                     }
                 }
-            });
+            }));
         }
         if module == "pit" && name == "drop" {
             let mut f = params.next().unwrap();
@@ -235,7 +253,7 @@ impl Plugin for PitPlugin {
                         ([#(#x),*],[#(#s),*]) => ctx.#id(#{opts.fp()}::CoeVec::uncoe(x))
                     )
                 });
-            return Some(quasiquote! {
+            return Ok(Some(quasiquote! {
                 'a: {
                     let x = #f;
                     let #{opts.fp()}::Value::<C>::ExternRef(x) = x else{
@@ -253,12 +271,12 @@ impl Plugin for PitPlugin {
                         break 'a #{opts.fp()}::ret(Ok(()))
                     }
                 }
-            });
+            }));
         };
-        return None;
+        return Ok(None);
     }
 
-    fn post(&self, opts: &Opts<Module<'static>>) -> TokenStream {
+    fn post(&self, opts: &Opts<Module<'static>>) -> anyhow::Result<TokenStream> {
         let root = &opts.crate_path;
         let name = opts.name.clone();
         let a = match opts.roots.get("tpit_rt") {
@@ -283,33 +301,35 @@ impl Plugin for PitPlugin {
                         };
                         #root::rexport::tramp::tramp(#{opts.import("pit","drop",once(quote!{
                             self.x.clone()
-                        }))})
+                        }))?})
                     }
                 }
                 #{
                     let a = self.tpit(opts).iter().map(|i|{
                         let tname = format_ident!("R{}",i.rid_str());
                         let meths = i.methods.iter().map(|(a,b)|
-                            quasiquote!{
+                            Ok(quasiquote!{
                                 fn #{format_ident!("{a}")}#{pit_rust_guest::render_sig(&pit_rust_guest::Opts { root: tpit_rt.clone(), salt: vec![], tpit: true },&tpit_rt.clone(),i,b,&quote! {&mut self},false)}{
                                     let ctx = unsafe{
                                         &mut *self.wrapped
                                     };
-                                    let res = #{opts.import(&format!("pit/{}",i.rid_str()),&format!("{a}"),once(quote!{self.x.clone()}).chain(b.params.iter().enumerate().map(|(i,p)|{
+                                    let res = #{opts.import(&format!("pit/{}",i.rid_str()),&format!("{a}"),once(Ok(quote!{self.x.clone()})).chain(b.params.iter().enumerate().map(|(i,p)|{
                                         let i = format_ident!("p{i}");
-                                        match p{
+                                        Ok(match p{
                                             Arg::Resource{ty,nullable,take,ann} => {
                                                 quote!{
-                                                    #{opts.fp()}::Value::<C>::ExternRef(Pit::Host{host:unsafe{
-                                                        #i.cast()
-                                                    }}.into())
+                                                    #{opts.fp()}::Value::<C>::ExternRef(Pit::Host{host:#{self.wrap(opts,quasiquote!{
+                                                        unsafe{
+                                                            #i.cast()
+                                                        }
+                                                    })?}}.into())
                                                 }
                                             }
                                             _ => quote!{
                                                 #i
                                             }
-                                        }
-                                    })))};
+                                        })
+                                    })).collect::<anyhow::Result<Vec<_>>>()?.into_iter())?};
                                     let res = #root::rexport::tramp::tramp(res).unwrap().into_tuple()
                                     ;
                                     #{                                        let r = b.rets.iter().enumerate().map(|(i,r)|{
@@ -329,13 +349,13 @@ impl Plugin for PitPlugin {
                                         #(#r),*
                                     }}
                                 }
-                        });
-                        quote!{
+                        })).collect::<anyhow::Result<Vec<_>>>()?;
+                        Ok(quote!{
                             impl<C: #name + ?Sized> #tname for Shim<C>{
                                 #(#meths),*
                             }
-                        }
-                    });
+                        })
+                    }).collect::<anyhow::Result<Vec<_>>>()?;
                     quote!{
                         #(#a)*
                     }
@@ -346,10 +366,10 @@ impl Plugin for PitPlugin {
             .extra
             .iter()
             .map(|x| x.post(self, opts))
-            .collect::<Vec<_>>();
-        return quote! {
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        return Ok(quote! {
             #a
             #(#bs)*
-        };
+        });
     }
 }

@@ -20,17 +20,17 @@ pub struct MemImport{
     // pub r#type: TokenStream
 }
 pub trait Plugin{
-    fn pre(&self, module: &mut Module<'static>);
-    fn import(&self, opts: &Opts<Module<'static>>, module: &str, name: &str, params: Vec<TokenStream>) -> Option<TokenStream>;
-    fn mem_import(&self, opts: &Opts<Module<'static>>, module: &str, name: &str) -> Option<MemImport>{
-        None
+    fn pre(&self, module: &mut Module<'static>) -> anyhow::Result<()>;
+    fn import(&self, opts: &Opts<Module<'static>>, module: &str, name: &str, params: Vec<TokenStream>) -> anyhow::Result<Option<TokenStream>>;
+    fn mem_import(&self, opts: &Opts<Module<'static>>, module: &str, name: &str) -> anyhow::Result<Option<MemImport>>{
+        Ok(None)
     }
-    fn post(&self, opts: &Opts<Module<'static>>) -> TokenStream;
-    fn bounds(&self, opts: &Opts<Module<'static>>) -> Option<TokenStream>{
-        None
+    fn post(&self, opts: &Opts<Module<'static>>) -> anyhow::Result<TokenStream>;
+    fn bounds(&self, opts: &Opts<Module<'static>>) -> anyhow::Result<Option<TokenStream>>{
+        Ok(None)
     }
-    fn exref_bounds(&self, opts: &Opts<Module<'static>>) -> Option<TokenStream>{
-        None
+    fn exref_bounds(&self, opts: &Opts<Module<'static>>) -> anyhow::Result<Option<TokenStream>>{
+        Ok(None)
     }
 
 }
@@ -96,7 +96,7 @@ impl Opts<Module<'static>> {
             }
         }
     }
-    pub fn mem(&self, m: Memory) -> TokenStream {
+    pub fn mem(&self, m: Memory) -> anyhow::Result<TokenStream> {
         if let Some(i) = self
             .module
             .imports
@@ -112,8 +112,8 @@ impl Opts<Module<'static>> {
             //     };
             // }
             for p in self.plugins.iter(){
-            if let Some(i) = p.mem_import(self, &i.module, &i.name){
-                return quasiquote!(#{i.expr});
+            if let Some(i) = p.mem_import(self, &i.module, &i.name)?{
+                return Ok(quasiquote!(#{i.expr}));
             }
             }
             // if self.flags.contains(Flags::WASIX) {
@@ -127,20 +127,20 @@ impl Opts<Module<'static>> {
             // }
         }
         let m2 = format_ident!("{m}");
-        quote! {
+        Ok(quote! {
             ctx.#m2()
-        }
+        })
     }
     pub fn import(
         &self,
         module: &str,
         name: &str,
         mut params: impl Iterator<Item = TokenStream>,
-    ) -> TokenStream {
+    ) -> anyhow::Result<TokenStream> {
         let params = params.collect::<Vec<_>>();
         for pl in self.plugins.iter(){
-            if let Some(a) = pl.import(self,module,name,params.clone()){
-                return a;
+            if let Some(a) = pl.import(self,module,name,params.clone())?{
+                return Ok(a);
             }
         }
         let mut params = params.into_iter();
@@ -263,9 +263,9 @@ impl Opts<Module<'static>> {
             
         // };
         let id = format_ident!("{}_{}", bindname(module), bindname(name));
-        return quote! {
+        return Ok(quote! {
             ctx.#id(#root::_rexport::tuple_list::tuple_list!(#(#params),*))
-        };
+        });
     }
     pub fn render_ty(&self, ctx: &TokenStream, ty: Type) -> TokenStream {
         let root = self.crate_path.clone();
@@ -428,10 +428,10 @@ impl Opts<Module<'static>> {
             }
         }
     }
-    pub fn render_relooped_block(&self, f: Func, x: &ShapedBlock<Block>) -> TokenStream {
+    pub fn render_relooped_block(&self, f: Func, x: &ShapedBlock<Block>) -> anyhow::Result<TokenStream> {
         let root = self.crate_path.clone();
         let b = self.module.funcs[f].body().unwrap();
-        match x {
+        Ok(match x {
             ShapedBlock::Simple(s) => {
                 let stmts = s.label;
                 fn term(b: &BranchMode) -> TokenStream {
@@ -474,11 +474,13 @@ impl Opts<Module<'static>> {
                         .immediate
                         .as_ref()
                         .map(|a| self.render_relooped_block(f, a.as_ref()))
+                        .transpose()?
                         .unwrap_or_default();
                     let next = s
                         .next
                         .as_ref()
                         .map(|a| self.render_relooped_block(f, a.as_ref()))
+                        .transpose()?
                         .unwrap_or_default();
                     let term2 = term(
                         &s.branches
@@ -486,11 +488,11 @@ impl Opts<Module<'static>> {
                             .cloned()
                             .unwrap_or(relooper::BranchMode::MergedBranch),
                     );
-                    return quote! {
+                    return Ok(quote! {
                         #term2;
                         #immediate;
                         #next;
-                    };
+                    });
                 }
                 let fp = self.fp();
                 let stmts = b.blocks[stmts].params.iter().map(|a|&a.1).chain(b.blocks[stmts].insts.iter()).map(|a|{
@@ -545,7 +547,7 @@ impl Opts<Module<'static>> {
                                             i.module.as_str(),
                                             i.name.as_str(),
                                             vals.iter().map(|a|format_ident!("{a}")).map(|a| quote! {#a}),
-                                        );
+                                        )?;
                                         quasiquote!{
                                             match #{if self.flags.contains(Flags::ASYNC){
                                                 quote!{
@@ -667,8 +669,8 @@ impl Opts<Module<'static>> {
                                     }
                                 },
                                 waffle::Operator::MemoryCopy { dst_mem, src_mem } => {
-                                    let dst = self.mem(*dst_mem);
-                                    let src = self.mem(*src_mem);
+                                    let dst = self.mem(*dst_mem)?;
+                                    let src = self.mem(*src_mem)?;
                                     let dst_ptr = format_ident!("{}",vals[0].to_string());
                                     let src_ptr = format_ident!("{}",vals[1].to_string());
                                     let len = format_ident!("{}",vals[2].to_string());
@@ -687,7 +689,7 @@ impl Opts<Module<'static>> {
                                     }
                                 },
                                 waffle::Operator::MemoryFill { mem } => {
-                                    let dst = self.mem(*mem);
+                                    let dst = self.mem(*mem)?;
                                     // let src = self.mem(*src_mem);
                                     let dst_ptr = format_ident!("{}",vals[0].to_string());
                                     let val = format_ident!("{}",vals[1].to_string());
@@ -778,7 +780,7 @@ impl Opts<Module<'static>> {
                                     // let clean = o.to_string();
                                     let clean = format_ident!("{}",o.to_string().split_once("<").expect("a memory op").0);
                                     let m2 = mem;
-                                    let mem = self.mem(m2);
+                                    let mem = self.mem(m2)?;
                                     let mut vals = vals.iter().map(|a|format_ident!("{a}"));
                                     let rt = if self.module.memories[m2].memory64{
                                         quote! {u64}
@@ -845,10 +847,10 @@ impl Opts<Module<'static>> {
                         // waffle::ValueDef::Trace(_, _) => todo!(),
                         waffle::ValueDef::None => todo!(),
                     };
-                    quote! {
+                    anyhow::Ok(quote! {
                         let #root::_rexport::tuple_list::tuple_list!(#(#av),*) = #b
-                    }
-                });
+                    })
+                }).collect::<anyhow::Result<Vec<_>>>()?;
                 let render_target = |k: &BlockTarget| {
                     let vars = k.args.iter().enumerate().map(|(i, a)| {
                         let a = format_ident!("{a}");
@@ -965,7 +967,7 @@ impl Opts<Module<'static>> {
                                     args.iter()
                                         .map(|a| format_ident!("{a}"))
                                         .map(|a| quote! {#a}),
-                                );
+                                )?;
                                 if self.flags.contains(Flags::ASYNC) {
                                     x
                                 } else {
@@ -1038,11 +1040,13 @@ impl Opts<Module<'static>> {
                     .immediate
                     .as_ref()
                     .map(|a| self.render_relooped_block(f, a.as_ref()))
+                    .transpose()?
                     .unwrap_or_default();
                 let next = s
                     .next
                     .as_ref()
                     .map(|a| self.render_relooped_block(f, a.as_ref()))
+                    .transpose()?
                     .unwrap_or_default();
                 quote! {
                     #(#stmts);*;
@@ -1052,11 +1056,12 @@ impl Opts<Module<'static>> {
                 }
             }
             ShapedBlock::Loop(l) => {
-                let r = self.render_relooped_block(f, &l.inner.as_ref());
+                let r = self.render_relooped_block(f, &l.inner.as_ref())?;
                 let next = l
                     .next
                     .as_ref()
                     .map(|a| self.render_relooped_block(f, a.as_ref()))
+                    .transpose()?
                     .unwrap_or_default();
                 let l = Lifetime::new(&format!("'l{}", l.loop_id), Span::call_site());
                 quote! {
@@ -1076,7 +1081,7 @@ impl Opts<Module<'static>> {
                     })
                 });
                 let cases = k.handled.iter().enumerate().map(|(a, i)| {
-                    let ib = self.render_relooped_block(f, &i.inner);
+                    let ib = self.render_relooped_block(f, &i.inner)?;
                     let ic = if i.break_after {
                         quote! {}
                     } else {
@@ -1085,13 +1090,13 @@ impl Opts<Module<'static>> {
                             continue 'cff
                         }
                     };
-                    quote! {
+                    Ok(quote! {
                         #a => {
                             #ib;
                             #ic;
                         }
-                    }
-                });
+                    })
+                }).collect::<anyhow::Result<Vec<_>>>()?;
                 quote! {
                     let mut cff2 = match cff{
                         #(#initial),*,
@@ -1106,9 +1111,9 @@ impl Opts<Module<'static>> {
                     };
                 }
             }
-        }
+        })
     }
-    pub fn render_fn(&self, f: Func) -> TokenStream {
+    pub fn render_fn(&self, f: Func) -> anyhow::Result<TokenStream> {
         let name = self.fname(f);
         let sig = self.render_fn_sig(
             name.clone(),
@@ -1135,12 +1140,12 @@ impl Opts<Module<'static>> {
                 i.module.as_str(),
                 i.name.as_str(),
                 params.map(|a| quote! {#a}),
-            );
-            return quote! {
+            )?;
+            return Ok(quote! {
                 #sig {
                     return #x;
                 }
-            };
+            });
         };
         let cfg = CFGInfo::new(b);
         // let values = b.values.entries().flat_map(|(a, d)| {
@@ -1217,7 +1222,7 @@ impl Opts<Module<'static>> {
         //         );
         //     }
         // };
-        let x = self.render_relooped_block(f, reloop.as_ref());
+        let x = self.render_relooped_block(f, reloop.as_ref())?;
         let mut b = quote! {
             let mut cff: usize = 0;
             #(let mut #bpvalues);*;
@@ -1231,11 +1236,11 @@ impl Opts<Module<'static>> {
                 }))
             }
         }
-        quote! {
+        Ok(quote! {
             #sig {
                 #b
             }
-        }
+        })
     }
 }
 #[derive(Clone)]
@@ -1280,14 +1285,14 @@ impl<X: AsRef<[u8]>> Opts<X> {
 }
 impl ToTokens for Opts<Module<'static>> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        go(self).to_tokens(tokens)
+        go(self).unwrap().to_tokens(tokens)
     }
 }
-pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
+pub fn go(opts: &Opts<Module<'static>>) -> anyhow::Result<proc_macro2::TokenStream> {
 
     let mut opts = opts.clone();
     for p in opts.plugins.iter(){
-        p.pre(&mut opts.module);
+        p.pre(&mut opts.module)?;
     }
     for f in opts.module.funcs.values_mut(){
         if let Some(b) = f.body_mut(){
@@ -1326,7 +1331,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
     //     // cfg: opts.cfg.clone(),
     // };
     let root = opts.crate_path.clone();
-    let funcs = opts.module.funcs.iter().map(|a| opts.render_fn(a));
+    let funcs = opts.module.funcs.iter().map(|a| opts.render_fn(a)).collect::<anyhow::Result<Vec<_>>>()?;
     let mut z = vec![];
     let mut fields = vec![];
     let mut sfields = vec![];
@@ -1437,7 +1442,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                 //     && opts.flags.contains(Flags::WASIX)
                 // {
                 // }else
-                 if opts.plugins.iter().any(|p|p.mem_import(&opts, &a, &b).is_some()){
+                 if opts.plugins.iter().any(|p|p.mem_import(&opts, &a, &b).ok().and_then(|a|a).is_some()){
                 // } else if a.starts_with("pit") && opts.flags.contains(Flags::PIT) {
                 } else {
                     // let a = bindname(&a);
@@ -1597,7 +1602,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                         |_|quote!{}
                     ).collect(),
                     _ => todo!()
-                }).is_some(){
+                })?.is_some(){
                     continue;
                 }
             }
@@ -1639,7 +1644,7 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
             #a: self.#a.clone()
         }
     });
-    quasiquote! {
+    Ok(quasiquote! {
         // mod #internal_path{
             // extern crate alloc;
             // pub fn alloc<T>(m: &mut  #{opts.alloc()}::collections::BTreeMap<u32,T>, x: T) -> u32{
@@ -1677,24 +1682,24 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                 quote! {}
             }}  #{
                 let a = opts.plugins.iter().map(|p|{
-                    let b = p.bounds(&opts);
-                    match b{
+                    let b = p.bounds(&opts)?;
+                    anyhow::Ok(match b{
                         None => quote!{},
                         Some(a) => quote!{+ #a}
-                    }
-                });
+                    })
+                }).collect::<anyhow::Result<Vec<_>>>()?;
                 quote!{
                     #(#a)*
                 }
             }{
                 type _ExternRef: Clone  #{
                     let a = opts.plugins.iter().map(|p|{
-                        let b = p.exref_bounds(&opts);
-                        match b{
+                        let b = p.exref_bounds(&opts)?;
+                        Ok(match b{
                             None => quote!{},
                             Some(a) => quote!{+ #a}
-                        }
-                    });
+                        })
+                    }).collect::<anyhow::Result<Vec<_>>>()?;
                     quote!{
                         #(#a)*
                     }
@@ -1739,10 +1744,10 @@ pub fn go(opts: &Opts<Module<'static>>) -> proc_macro2::TokenStream {
                 }
             }
             #{
-                let a = opts.plugins.iter().map(|a|a.post(&opts));
+                let a = opts.plugins.iter().map(|a|a.post(&opts)).collect::<anyhow::Result<Vec<_>>>()?;
                 quote!(#(#a)*)
             }
         // }
         // use #internal_path::{#name,#data};
-    }
+    })
 }

@@ -134,6 +134,14 @@ pub fn wars(a: TokenStream) -> TokenStream {
         }
         .to_mod(),
     );
+    let x = match x {
+        Ok(a) => a,
+        Err(e) => {
+            return syn::Error::new(Span::call_site(), e)
+                .into_compile_error()
+                .into()
+        }
+    };
     let expanded = Expander::new("wars")
         .add_comment("This is generated code!".to_owned())
         .fmt(Edition::_2021)
