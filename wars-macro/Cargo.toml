@@ -1,6 +1,6 @@
 [package]
 name = "wars-macro"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 license = "CC0-1.0"
 description = "Wasm to Rust converter"
@@ -17,6 +17,6 @@ wars-pit-plugin = { version = "0.5.0", path = "../wars-pit-plugin" }
 wat = "1.209.1"
 
 [dev-dependencies]
-wars-rt = { version = "0.4", path = "../wars-rt" }
+wars-rt = { path = "../wars-rt" }
 [lib]
 proc-macro = true
