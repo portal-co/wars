@@ -26,6 +26,9 @@ pub struct PitPlugin {
 }
 
 pub trait PitPluginPlugin {
+    fn pre(&self, pit: &PitPlugin, module: &mut Module<'static>) -> anyhow::Result<()> {
+        return Ok(());
+    }
     fn choose_type(&self, opts: &Opts<Module<'static>>) -> anyhow::Result<Option<TokenStream>>;
     fn emit_method(
         &self,
@@ -105,6 +108,9 @@ impl Plugin for PitPlugin {
         ))
     }
     fn pre(&self, module: &mut Module<'static>) -> anyhow::Result<()> {
+        for p in self.extra.iter() {
+            p.pre(self, module)?;
+        }
         Ok(())
     }
 
