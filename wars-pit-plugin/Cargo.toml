@@ -1,6 +1,6 @@
 [package]
 name = "wars-pit-plugin"
-version = "0.1.0"
+version = "0.5.0"
 edition = "2021"
 
 [dependencies]
@@ -14,10 +14,10 @@ quote = "1.0.36"
 relooper = "0.1.0"
 sha3 = "0.10.8"
 syn = "2.0.66"
-waffle-func-reloop = { version = "0.4.0", path = "../waffle-func-reloop" }
+waffle-func-reloop = { version = "0.5.0", path = "../waffle-func-reloop" }
 # witx = {git="https://github.com/wasix-org/wasix-witx.git",branch="main"}
 pit-core = "0.3.2"
 pit-patch = "0.3.2"
 pit-rust-guest = "0.3.2"
-wars = { version = "0.4.3", path = "../wars" }
+wars = { version = "0.5.0", path = "../wars" }
 anyhow = "1.0.93"
