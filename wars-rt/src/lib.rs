@@ -1,8 +1,8 @@
 #![no_std]
 extern crate alloc;
 
-pub use either::Either;
 pub use core::convert::Infallible;
+pub use either::Either;
 
 pub mod func;
 pub mod wasix;

@@ -1285,7 +1285,10 @@ impl<X: AsRef<[u8]>> Opts<X> {
 }
 impl ToTokens for Opts<Module<'static>> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        go(self).unwrap().to_tokens(tokens)
+       match  go(self){
+        Ok(a) => a.to_tokens(tokens),
+        Err(e) => syn::Error::new(Span::call_site(), e).to_compile_error().to_tokens(tokens)
+    }
     }
 }
 pub fn go(opts: &Opts<Module<'static>>) -> anyhow::Result<proc_macro2::TokenStream> {
