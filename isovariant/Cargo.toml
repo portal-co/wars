@@ -1,6 +1,6 @@
 [package]
 name = "isovariant"
-version = "0.5.2"
+version = "0.6.0"
 edition = "2021"
 license = "CC0-1.0"
 description = "Utility for a Wasm to Rust converter"
