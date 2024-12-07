@@ -26,7 +26,7 @@ pub struct PitPlugin {
 }
 
 pub trait PitPluginPlugin {
-    fn pre(&self, pit: &PitPlugin, module: &mut Module<'static>) -> anyhow::Result<()> {
+    fn pre(&self, pit: &PitPlugin, module: &mut Opts<Module<'static>>) -> anyhow::Result<()> {
         return Ok(());
     }
     fn choose_type(&self, opts: &Opts<Module<'static>>) -> anyhow::Result<Option<TokenStream>>;
@@ -139,7 +139,7 @@ impl Plugin for PitPlugin {
             quasiquote! {From<#root::Pit<Vec<#{opts.fp()}::Value<Self>>,#{self.host_tpit(opts)?}>> + TryInto<#root::Pit<Vec<#{opts.fp()}::Value<Self>>,#{self.host_tpit(opts)?}>>},
         ))
     }
-    fn pre(&self, module: &mut Module<'static>) -> anyhow::Result<()> {
+    fn pre(&self, module: &mut Opts<Module<'static>>) -> anyhow::Result<()> {
         for p in self.extra.iter() {
             p.pre(self, module)?;
         }

@@ -3,7 +3,7 @@ use std::{
 };
 
 
-use pit_core::{Arg, Interface};
+// use pit_core::{Arg, Interface};
 use proc_macro2::{Span, TokenStream};
 use quasiquote::quasiquote;
 use quote::{format_ident, quote, ToTokens};
@@ -20,7 +20,7 @@ pub struct MemImport{
     // pub r#type: TokenStream
 }
 pub trait Plugin{
-    fn pre(&self, module: &mut Module<'static>) -> anyhow::Result<()>;
+    fn pre(&self, module: &mut Opts<Module<'static>>) -> anyhow::Result<()>;
     fn import(&self, opts: &Opts<Module<'static>>, module: &str, name: &str, params: Vec<TokenStream>) -> anyhow::Result<Option<TokenStream>>;
     fn mem_import(&self, opts: &Opts<Module<'static>>, module: &str, name: &str) -> anyhow::Result<Option<MemImport>>{
         Ok(None)
@@ -1291,9 +1291,12 @@ impl ToTokens for Opts<Module<'static>> {
 pub fn go(opts: &Opts<Module<'static>>) -> anyhow::Result<proc_macro2::TokenStream> {
 
     let mut opts = opts.clone();
-    for p in opts.plugins.iter(){
-        p.pre(&mut opts.module)?;
+    let mut ps = vec![];
+    while let Some(p) = opts.plugins.pop(){
+        p.pre(&mut opts)?;
+        ps.push(p);
     }
+    opts.plugins = ps;
     for f in opts.module.funcs.values_mut(){
         if let Some(b) = f.body_mut(){
             if let Cow::Owned(c) = waffle::backend::reducify::Reducifier::new(b).run(){
