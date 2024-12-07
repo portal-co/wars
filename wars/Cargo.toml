@@ -20,7 +20,4 @@ sha3 = "0.10.8"
 syn = "2.0.66"
 waffle-func-reloop = { version = "0.5.0", path = "../waffle-func-reloop" }
 # witx = {git="https://github.com/wasix-org/wasix-witx.git",branch="main"}
-pit-core = "0.3.2"
-pit-patch = "0.3.2"
-pit-rust-guest = "0.3.2"
 anyhow = "1.0.93"

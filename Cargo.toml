@@ -5,3 +5,6 @@ resolver="2"
 [workspace.dependencies]
 
 portal-pc-waffle = {version="0.3.4"}
+pit-core = "0.3.2"
+pit-patch = "0.3.2"
+pit-rust-guest = "0.3.2"
