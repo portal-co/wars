@@ -67,6 +67,8 @@ impl<C: CtxSpec> Traverse<C> for Value<C> {
     fn traverse<'a>(&'a self) -> Box<dyn Iterator<Item = &'a <C as CtxSpec>::ExternRef> + 'a> {
         match self {
             Value::ExRef(e) => Box::new(once(e)),
+            #[cfg(feature = "dumpster")]
+            Value::Gc(g) => g.traverse(),
             _ => Box::new(empty()),
         }
     }
@@ -76,6 +78,8 @@ impl<C: CtxSpec> Traverse<C> for Value<C> {
     ) -> Box<dyn Iterator<Item = &'a mut <C as CtxSpec>::ExternRef> + 'a> {
         match self {
             Value::ExRef(e) => Box::new(once(e)),
+            #[cfg(feature = "dumpster")]
+            Value::Gc(g) => g.traverse_mut(),
             _ => Box::new(empty()),
         }
     }
@@ -159,6 +163,7 @@ coe_impl_prim!(u64 in I64);
 coe_impl_prim!(f32 in F32);
 coe_impl_prim!(f64 in F64);
 pub trait CoeVec<C: CtxSpec>: Sized {
+    const NUM: usize;
     fn coe(self) -> Vec<Value<C>>;
     fn uncoe(a: Vec<Value<C>>) -> anyhow::Result<Self>;
 }
@@ -170,6 +175,7 @@ impl<C: CtxSpec> CoeVec<C> for () {
     fn uncoe(a: Vec<Value<C>>) -> anyhow::Result<Self> {
         Ok(())
     }
+    const NUM: usize = 0;
 }
 impl<C: CtxSpec, A: Coe<C>, B: CoeVec<C>> CoeVec<C> for (A, B) {
     fn coe(self) -> Vec<Value<C>> {
@@ -186,6 +192,7 @@ impl<C: CtxSpec, A: Coe<C>, B: CoeVec<C>> CoeVec<C> for (A, B) {
         let z = B::uncoe(a)?;
         Ok((y, z))
     }
+    const NUM: usize = B::NUM + 1;
 }
 pub fn map_rec<'a, T: 'a, U>(
     r: AsyncRec<'a, T>,
