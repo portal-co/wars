@@ -783,7 +783,7 @@ impl Opts<Module<'static>> {
                                         }}(#{format_ident!("{v}")})
                                     });
                                     quasiquote!{
-                                        #{self.fp()}::cast::<_,_,C>(#root::gc::Struct(#root::tuple_list::tuple_list!(#(#vals),*)))
+                                        #{self.fp()}::cast::<_,_,C>(#root::gc::Struct(#root::_rexport::tuple_list::tuple_list!(#(#vals),*)))
                                     }
                                 }
                                 Operator::StructGet { sig, idx } => {
