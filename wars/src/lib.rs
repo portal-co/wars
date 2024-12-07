@@ -792,10 +792,10 @@ impl Opts<Module<'static>> {
                                     };
                                     let i = format_ident!("{i}");
                                     quasiquote!{
-                                        match #i.clone(){
+                                        {self.fp()}::cast::<_,_,C>(match #i.clone(){
                                             #{self.fp()}::Value::Gc(g) => g.get_field(#idx),
                                             _ => todo!()
-                                        }
+                                        })
                                     }
                                 }
                                 Operator::StructSet { sig, idx } => {
@@ -806,7 +806,7 @@ impl Opts<Module<'static>> {
                                     let j = format_ident!("{j}");
                                     quasiquote!{
                                         match #i.clone(){
-                                            #{self.fp()}::Value::Gc(g) => g.set_field(#idx,#j.clone()),
+                                            #{self.fp()}::Value::Gc(g) => g.set_field(#idx,#{self.fp()}::cast::<_,_,C>(#j.clone())),
                                             _ => todo!()
                                         }
                                     }
