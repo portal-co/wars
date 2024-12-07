@@ -33,13 +33,26 @@ pub trait PitPluginPlugin {
     fn emit_method(
         &self,
         opts: &Opts<Module<'static>>,
+        idx: usize,
         i: &Interface,
         s: &str,
         value: TokenStream,
         params: &[TokenStream],
     ) -> anyhow::Result<TokenStream>;
-    fn post(&self, parent: &PitPlugin, opts: &Opts<Module<'static>>)
-        -> anyhow::Result<TokenStream>;
+    fn emit_drop(
+        &self,
+        opts: &Opts<Module<'static>>,
+        idx: usize,
+        value: TokenStream,
+    ) -> anyhow::Result<TokenStream> {
+        return Ok(quasiquote!(#{opts.fp()}::ret(Ok(()))));
+    }
+    fn post(
+        &self,
+        parent: &PitPlugin,
+        idx: usize,
+        opts: &Opts<Module<'static>>,
+    ) -> anyhow::Result<TokenStream>;
 }
 
 impl PitPlugin {
@@ -52,8 +65,9 @@ impl PitPlugin {
         });
     }
     pub fn host_tpit(&self, opts: &Opts<Module<'static>>) -> anyhow::Result<TokenStream> {
-        let mut a = opts.host_tpit();
+        let mut a;
         let root = &opts.crate_path;
+        a = quote! {#root::Infallible};
         for e in self.extra.iter() {
             if let Some(c) = e.choose_type(opts)? {
                 a = quote! {
@@ -72,12 +86,30 @@ impl PitPlugin {
         params: &[TokenStream],
     ) -> anyhow::Result<TokenStream> {
         let root = &opts.crate_path;
-        for e in self.extra.iter() {
+        for (idx, e) in self.extra.iter().enumerate() {
             if let Some(c) = e.choose_type(opts)? {
                 x = quasiquote! {
                     match host{
                         #root::Either::Right(host) => #x,
-                        #root::Either::Left(host) => #{e.emit_method(opts, i, s, quote! {host}, params)?},
+                        #root::Either::Left(host) => #{e.emit_method(opts,idx, i, s, quote! {host}, params)?},
+                    }
+                };
+            }
+        }
+        return Ok(x);
+    }
+    pub fn apply_drop(
+        &self,
+        mut x: TokenStream,
+        opts: &Opts<Module<'static>>,
+    ) -> anyhow::Result<TokenStream> {
+        let root = &opts.crate_path;
+        for (idx, e) in self.extra.iter().enumerate() {
+            if let Some(c) = e.choose_type(opts)? {
+                x = quasiquote! {
+                    match host{
+                        #root::Either::Right(host) => #x,
+                        #root::Either::Left(host) => #{e.emit_drop(opts,idx, quote! {host})?},
                     }
                 };
             }
@@ -181,50 +213,7 @@ impl Plugin for PitPlugin {
                             #(#cases),*,
                             _ => break 'a #{opts.fp()}::ret(Err(#root::_rexport::anyhow::anyhow!("invalid target")))
                         },
-                        #root::Pit::Host{host} => #{let t = match opts.roots.get("tpit_rt"){
-                            None => quote!{
-                                match host{
-
-                                }
-                            },
-                            Some(r) => quasiquote!{
-                                let casted = unsafe{
-                                    host.cast::<Box<dyn #{format_ident!("R{}",i)}>>()
-                                };
-                                let a = casted.#{format_ident!("{name}")}(#{
-                                    let p = params.iter().zip(meth.unwrap().params.iter()).map(|(x,y)|match y{
-                                        Arg::Resource { ty, nullable, take, ann } => quasiquote!{
-                                            Box::new(Shim{wrapped: ctx, x: #x}).into()
-                                        },
-                                        _ => quote!{
-                                            #x
-                                        }
-                                    });
-
-                                    quote!{
-                                        #(#p),*
-                                    }
-                                });
-                                break 'a #{opts.fp()}::ret(Ok(#root::tuple_list::tuple_list!(#{
-                                    let r = meth.unwrap().rets.iter().enumerate().map(|(i,r)|{
-                                        let i = syn::Index{index: i as u32, span: Span::call_site()};
-                                        let i = quote!{
-                                            a.#i
-                                        };
-                                        match r{
-                                            Arg::Resource { ty, nullable, take, ann } => quote!{
-                                                #{opts.fp()}::Value::<C>::ExternRef(#root::Pit::Host{host: unsafe{i.cast()}})
-                                            },
-                                            _ => i
-                                        }
-                                    });
-
-                                    quote!{
-                                        #(#r),*
-                                    }
-                                })));
-                            }
-                        };self.apply_host(t,opts,interface.unwrap(),name,&params)?}
+                        #root::Pit::Host{host} => #{let t = quote!{match host{}};self.apply_host(t,opts,interface.unwrap(),name,&params)?}
             _ => todo!()
                     }
                 }
@@ -271,7 +260,7 @@ impl Plugin for PitPlugin {
                                 #(#cases),*,
                                 _ => #{opts.fp()}::ret(Ok(()))
                             },
-                            #root::Pit::Host{host} => break 'a #{opts.fp()}::ret(Ok(()))
+                            #root::Pit::Host{host} => break 'a #{self.apply_drop(quasiquote!(#{opts.fp()}::ret(Ok(()))),opts)?}
                         }
                     }else{
                         break 'a #{opts.fp()}::ret(Ok(()))
@@ -283,6 +272,104 @@ impl Plugin for PitPlugin {
     }
 
     fn post(&self, opts: &Opts<Module<'static>>) -> anyhow::Result<TokenStream> {
+        let root = &opts.crate_path;
+        let name = opts.name.clone();
+
+        let bs = self
+            .extra
+            .iter()
+            .enumerate()
+            .map(|(i, x)| x.post(self, i, opts))
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        return Ok(quote! {
+            #(#bs)*
+        });
+    }
+}
+pub fn indexed_lookup(root: &TokenStream, i: usize, a: TokenStream) -> TokenStream {
+    if i == 0 {
+        return quote! {#root::Either::Right(#a)};
+    }
+    return quasiquote!(#root::Either::Left(#{indexed_lookup(root, i - 1, a)}));
+}
+pub struct Passthrough {}
+impl PitPluginPlugin for Passthrough {
+    fn choose_type(&self, opts: &Opts<Module<'static>>) -> anyhow::Result<Option<TokenStream>> {
+        Ok(Some(quasiquote!(
+            #{opts.host_tpit()}
+        )))
+    }
+
+    fn emit_method(
+        &self,
+        opts: &Opts<Module<'static>>,
+        idx: usize,
+        i: &Interface,
+        s: &str,
+        value: TokenStream,
+        params: &[TokenStream],
+    ) -> anyhow::Result<TokenStream> {
+        let meth = i.methods.get(s);
+        let i2 = i.rid_str();
+        let root = &opts.crate_path;
+        Ok(match opts.roots.get("tpit_rt") {
+            None => quote! {
+                match #value{
+
+                }
+            },
+            Some(r) => quasiquote! {
+                    match #value{
+                        host => {
+                    let casted = unsafe{
+                        host.cast::<Box<dyn #{format_ident!("R{}",i2)}>>()
+                    };
+                    let a = casted.#{format_ident!("{s}")}(#{
+                        let p = params.iter().zip(meth.unwrap().params.iter()).map(|(x,y)|match y{
+                            Arg::Resource { ty, nullable, take, ann } => quasiquote!{
+                                Box::new(Shim{wrapped: ctx, x: #x}).into()
+                            },
+                            _ => quote!{
+                                #x
+                            }
+                        });
+
+                        quote!{
+                            #(#p),*
+                        }
+                    });
+                    break 'a #{opts.fp()}::ret(Ok(#root::tuple_list::tuple_list!(#{
+                        let r = meth.unwrap().rets.iter().enumerate().map(|(i,r)|{
+                            let i = syn::Index{index: i as u32, span: Span::call_site()};
+                            let i = quote!{
+                                a.#i
+                            };
+                            match r{
+                                Arg::Resource { ty, nullable, take, ann } => quote!{
+                                    #{opts.fp()}::Value::<C>::ExternRef(#root::Pit::Host{host: #{indexed_lookup(root,idx,quasiquote!{
+                                        unsafe{i.cast()}
+                                    })}})
+                                },
+                                _ => i
+                            }
+                        });
+
+                        quote!{
+                            #(#r),*
+                        }
+                    })));
+                }
+            }
+                },
+        })
+    }
+
+    fn post(
+        &self,
+        parent: &PitPlugin,
+        idx: usize,
+        opts: &Opts<Module<'static>>,
+    ) -> anyhow::Result<TokenStream> {
         let root = &opts.crate_path;
         let name = opts.name.clone();
         let a = match opts.roots.get("tpit_rt") {
@@ -311,7 +398,7 @@ impl Plugin for PitPlugin {
                     }
                 }
                 #{
-                    let a = self.tpit(opts).iter().map(|i|{
+                    let a = parent.tpit(opts).iter().map(|i|{
                         let tname = format_ident!("R{}",i.rid_str());
                         let meths = i.methods.iter().map(|(a,b)|
                             Ok(quasiquote!{
@@ -324,7 +411,7 @@ impl Plugin for PitPlugin {
                                         Ok(match p{
                                             Arg::Resource{ty,nullable,take,ann} => {
                                                 quote!{
-                                                    #{opts.fp()}::Value::<C>::ExternRef(Pit::Host{host:#{self.wrap(opts,quasiquote!{
+                                                    #{opts.fp()}::Value::<C>::ExternRef(Pit::Host{host:#{indexed_lookup(opts,i,dxquasiquote!{
                                                         unsafe{
                                                             #i.cast()
                                                         }
@@ -368,14 +455,6 @@ impl Plugin for PitPlugin {
                 }
             },
         };
-        let bs = self
-            .extra
-            .iter()
-            .map(|x| x.post(self, opts))
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        return Ok(quote! {
-            #a
-            #(#bs)*
-        });
+        Ok(a)
     }
 }
