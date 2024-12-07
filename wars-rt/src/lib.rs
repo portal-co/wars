@@ -1,6 +1,9 @@
 #![no_std]
 extern crate alloc;
 
+pub use either::Either;
+pub use core::convert::Infallible;
+
 pub mod func;
 pub mod wasix;
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
