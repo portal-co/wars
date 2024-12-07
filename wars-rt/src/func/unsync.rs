@@ -1,14 +1,10 @@
-use alloc::{
-    sync::Arc,
-    boxed::Box,
-    vec::Vec,
-};
+use alloc::vec;
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::{
     future::Future,
     iter::{empty, once},
     pin::Pin,
 };
-use alloc::vec;
 
 use anyhow::Context;
 // use tramp::{tramp, BorrowRec, Thunk};
@@ -48,17 +44,17 @@ pub enum Value<C: CtxSpec> {
     Null,
     ExRef(C::ExternRef),
     #[cfg(feature = "dumpster")]
-    Gc(crate::gc::GcCore<Value<C>>)
+    Gc(crate::gc::GcCore<Value<C>>),
 }
 #[cfg(feature = "dumpster")]
 const _: () = {
     use dumpster::Trace;
-    unsafe impl<C: CtxSpec<ExternRef: Trace>> Trace for Value<C>{
+    unsafe impl<C: CtxSpec<ExternRef: Trace>> Trace for Value<C> {
         fn accept<V: dumpster::Visitor>(&self, visitor: &mut V) -> Result<(), ()> {
-            match self{
+            match self {
                 Self::ExRef(e) => e.accept(visitor),
                 Self::Gc(g) => g.accept(visitor),
-                _ => Ok(())
+                _ => Ok(()),
             }
         }
     }
@@ -162,6 +158,96 @@ coe_impl_prim!(u32 in I32);
 coe_impl_prim!(u64 in I64);
 coe_impl_prim!(f32 in F32);
 coe_impl_prim!(f64 in F64);
+
+#[cfg(feature = "dumpster")]
+pub trait CoeField<C: CtxSpec>: Sized {
+    fn coe(self) -> crate::gc::Field<Value<C>>;
+    fn uncoe(x: crate::gc::Field<Value<C>>) -> anyhow::Result<Self>;
+}
+
+#[cfg(feature = "dumpster")]
+pub trait CoeFieldVec<C: CtxSpec>: Sized {
+    const NUM: usize;
+    fn coe(self) -> Vec<crate::gc::Field<Value<C>>>;
+    fn uncoe(a: Vec<crate::gc::Field<Value<C>>>) -> anyhow::Result<Self>;
+}
+
+#[cfg(feature = "dumpster")]
+const _: () = {
+    use std::sync::Mutex;
+
+    use crate::gc::{Const, Field, Mut, Struct};
+
+    impl<C: CtxSpec, V: Coe<C>> CoeField<C> for Const<V> {
+        fn coe(self) -> crate::gc::Field<Value<C>> {
+            crate::gc::Field::Const(self.0.coe())
+        }
+
+        fn uncoe(x: crate::gc::Field<Value<C>>) -> anyhow::Result<Self> {
+            V::uncoe(match x {
+                crate::gc::Field::Const(a) => a,
+                crate::gc::Field::Mut(arc) => arc.lock().unwrap().clone(),
+            })
+            .map(Self)
+        }
+    }
+
+    impl<C: CtxSpec, V: Coe<C>> CoeField<C> for Mut<V> {
+        fn coe(self) -> crate::gc::Field<Value<C>> {
+            crate::gc::Field::Mut(Arc::new(Mutex::new(self.0.coe())))
+        }
+
+        fn uncoe(x: crate::gc::Field<Value<C>>) -> anyhow::Result<Self> {
+            V::uncoe(match x {
+                crate::gc::Field::Const(a) => a,
+                crate::gc::Field::Mut(arc) => arc.lock().unwrap().clone(),
+            })
+            .map(Self)
+        }
+    }
+    impl<C: CtxSpec> CoeFieldVec<C> for () {
+        fn coe(self) -> Vec<Field<Value<C>>> {
+            vec![]
+        }
+
+        fn uncoe(a: Vec<Field<Value<C>>>) -> anyhow::Result<Self> {
+            Ok(())
+        }
+
+        const NUM: usize = 0;
+    }
+    impl<C: CtxSpec, A: CoeField<C>, B: CoeFieldVec<C>> CoeFieldVec<C> for (A, B) {
+        fn coe(self) -> Vec<Field<Value<C>>> {
+            let mut a = self.1.coe();
+            a.push(self.0.coe());
+            return a;
+        }
+
+        fn uncoe(mut a: Vec<Field<Value<C>>>) -> anyhow::Result<Self> {
+            let Some(x) = a.pop() else {
+                anyhow::bail!("list too small")
+            };
+            let y = A::uncoe(x).context("invalid item (note coe lists are REVERSED)")?;
+            let z = B::uncoe(a)?;
+            Ok((y, z))
+        }
+
+        const NUM: usize = B::NUM + 1;
+    }
+    impl<C: CtxSpec, V: CoeFieldVec<C>> Coe<C> for Struct<V>{
+        fn coe(self) -> Value<C> {
+            Value::Gc(crate::gc::GcCore::Fields(self.0.coe()))
+        }
+    
+        fn uncoe(x: Value<C>) -> anyhow::Result<Self> {
+            match x{
+                Value::Gc(crate::gc::GcCore::Fields(f)) => V::uncoe(f).map(Self),
+                _ => anyhow::bail!("nota gc")
+            }
+        }
+    }
+};
+
 pub trait CoeVec<C: CtxSpec>: Sized {
     const NUM: usize;
     fn coe(self) -> Vec<Value<C>>;

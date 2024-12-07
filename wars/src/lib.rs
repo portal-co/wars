@@ -771,6 +771,46 @@ impl Opts<Module<'static>> {
                                         }
                                     }
                                 },
+                                Operator::StructNew { sig } => {
+                                    let vals = vals.iter().zip(match &self.module.signatures[*sig]{
+                                        SignatureData::Struct { fields } => fields.iter(),
+                                        _ => anyhow::bail!("not a struct")
+                                    }).map(|(v,f)|quasiquote!{
+                                        #root::gc::#{if f.mutable{
+                                            quote!{Mut}
+                                        }else{
+                                            quote!{Const}
+                                        }}(#{format_ident!("{v}")})
+                                    });
+                                    quasiquote!{
+                                        #{self.fp()}::cast::<_,_,C>(#root::gc::Struct(#root::tuple_list::tuple_list!(#(#vals),*)))
+                                    }
+                                }
+                                Operator::StructGet { sig, idx } => {
+                                    let [i,..] = vals else{
+                                        unreachable!()
+                                    };
+                                    let i = format_ident!("{i}");
+                                    quasiquote!{
+                                        match #i.clone(){
+                                            #{self.fp()}::Value::Gc(g) => g.get_field(#idx),
+                                            _ => todo!()
+                                        }
+                                    }
+                                }
+                                Operator::StructSet { sig, idx } => {
+                                    let [i,j,..] = vals else{
+                                        unreachable!()
+                                    };
+                                    let i = format_ident!("{i}");
+                                    let j = format_ident!("{j}");
+                                    quasiquote!{
+                                        match #i.clone(){
+                                            #{self.fp()}::Value::Gc(g) => g.set_field(#idx,#j.clone()),
+                                            _ => todo!()
+                                        }
+                                    }
+                                }
                                 _ if waffle::op_traits::mem_count(o) == 1 => {
                                     let mut mem = Memory::invalid();
                                     waffle::op_traits::rewrite_mem(&mut o.clone(), &mut [();4], |m,_|{

@@ -21,26 +21,22 @@ pub enum GcCore<R> {
     Fields(Vec<Field<R>>),
 }
 
-impl<R: Clone> GcCore<R>{
-    pub fn get_field(&self, a: usize) -> R{
-        match self{
-            GcCore::Fields(vec) => {
-                match &vec[a]{
-                    Field::Const(r) => r.clone(),
-                    Field::Mut(arc) => arc.lock().unwrap().clone(),
-                }
+impl<R: Clone> GcCore<R> {
+    pub fn get_field(&self, a: usize) -> R {
+        match self {
+            GcCore::Fields(vec) => match &vec[a] {
+                Field::Const(r) => r.clone(),
+                Field::Mut(arc) => arc.lock().unwrap().clone(),
             },
         }
     }
-    pub fn set_field(&self, a: usize, r: R){
+    pub fn set_field(&self, a: usize, r: R) {
         match self {
-            GcCore::Fields(vec) => match &vec[a]{
-                Field::Const(_) => {
-
-                },
+            GcCore::Fields(vec) => match &vec[a] {
+                Field::Const(_) => {}
                 Field::Mut(arc) => {
                     *arc.lock().unwrap() = r;
-                },
+                }
             },
         }
     }
@@ -99,3 +95,20 @@ impl<C: CtxSpec, R: Traverse<C>> Traverse<C> for Field<R> {
         }
     }
 }
+macro_rules! newty {
+    ($name:ident) => {
+        #[derive(Clone)]
+        #[repr(transparent)]
+        pub struct $name<W>(pub W);
+
+        unsafe impl<W: Trace> Trace for $name<W> {
+            fn accept<V: dumpster::Visitor>(&self, visitor: &mut V) -> Result<(), ()> {
+                self.0.accept(visitor)
+            }
+        }
+    };
+}
+newty!(Struct);
+newty!(Array);
+newty!(Const);
+newty!(Mut);
