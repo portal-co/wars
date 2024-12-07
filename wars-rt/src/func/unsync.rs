@@ -31,6 +31,7 @@ impl<'a, T> AsyncRec<'a, T> {
 }
 pub use crate::CtxSpec;
 use crate::Traverse;
+#[non_exhaustive]
 pub enum Value<C: CtxSpec> {
     I32(u32),
     I64(u64),
@@ -46,7 +47,22 @@ pub enum Value<C: CtxSpec> {
     ),
     Null,
     ExRef(C::ExternRef),
+    #[cfg(feature = "dumpster")]
+    Gc(crate::gc::GcCore<Value<C>>)
 }
+#[cfg(feature = "dumpster")]
+const _: () = {
+    use dumpster::Trace;
+    unsafe impl<C: CtxSpec> Trace for Value<C>{
+        fn accept<V: dumpster::Visitor>(&self, visitor: &mut V) -> Result<(), ()> {
+            match self{
+                Self::ExRef(e) => e.accept(visitor),
+                Self::Gc(g) => g.accept(visitor),
+                _ => Ok(())
+            }
+        }
+    }
+};
 impl<C: CtxSpec> Traverse<C> for Value<C> {
     fn traverse<'a>(&'a self) -> Box<dyn Iterator<Item = &'a <C as CtxSpec>::ExternRef> + 'a> {
         match self {
@@ -83,6 +99,8 @@ impl<C: CtxSpec> Clone for Value<C> {
             Self::FunRef(arg0) => Self::FunRef(arg0.clone()),
             Self::Null => Self::Null,
             Self::ExRef(e) => Self::ExRef(e.clone()),
+            #[cfg(feature = "dumpster")]
+            Self::Gc(c) => Self::Gc(c.clone()),
         }
     }
 }
