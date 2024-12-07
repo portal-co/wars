@@ -53,7 +53,7 @@ pub enum Value<C: CtxSpec> {
 #[cfg(feature = "dumpster")]
 const _: () = {
     use dumpster::Trace;
-    unsafe impl<C: CtxSpec> Trace for Value<C>{
+    unsafe impl<C: CtxSpec<ExternRef: Trace>> Trace for Value<C>{
         fn accept<V: dumpster::Visitor>(&self, visitor: &mut V) -> Result<(), ()> {
             match self{
                 Self::ExRef(e) => e.accept(visitor),

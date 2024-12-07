@@ -33,25 +33,10 @@ pub enum Pit<X, H> {
 // use as_ref::AsSlice;
 // use func::CtxSpec;
 pub use func::Value;
-#[cfg(feature = "dumpster")]
-trait XrGc: dumpster::Trace{
 
-}
-#[cfg(feature = "dumpster")]
-impl<T: ?Sized + dumpster::Trace> XrGc for T{
-
-}
-#[cfg(not(feature = "dumpster"))]
-trait XrGc{
-
-}
-#[cfg(not(feature = "dumpster"))]
-impl<T: ?Sized> XrGc for T{
-
-}
 
 pub trait CtxSpec: Sized {
-    type ExternRef: Clone + XrGc;
+    type ExternRef: Clone;
 }
 pub trait Traverse<C: CtxSpec> {
     fn traverse<'a>(&'a self) -> Box<dyn Iterator<Item = &'a C::ExternRef> + 'a>;

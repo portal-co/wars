@@ -8,16 +8,23 @@ mod heapsize{
     impl<T: ?Sized> HeapSize for T{}
 }
 
-#[derive(Trace,Clone)]
+#[derive(Clone)]
 #[non_exhaustive]
-pub enum GcCore<R: Trace>{
+pub enum GcCore<R>{
     Fields(Vec<Field<R>>)
 }
 
+unsafe impl<R: Trace> Trace for GcCore<R>{
+    fn accept<V: dumpster::Visitor>(&self, visitor: &mut V) -> Result<(), ()> {
+        match self{
+            GcCore::Fields(vec) => vec.accept(visitor),
+        }
+    }
+}
 
 #[derive(Clone)]
 #[non_exhaustive]
-pub enum Field<R: Trace>{
+pub enum Field<R>{
     Const(R),
     Mut(Arc<Mutex<R>>)
 }
