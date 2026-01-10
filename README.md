@@ -1,13 +1,14 @@
 # wars
 
 ## Description
-Project wars
+"Wasm to Rust converter" (`wars`). workspace for converting WASM modules to Rust code or runtime components.
 
 ## Goals
-- [ ] Add project goals
+- [ ] Transpile WASM to Rust
+- [ ] Provide runtime support (`wars-rt`)
 
 ## Progress
-- [ ] Initial setup
+- [ ] Workspace setup
 
 ---
 *AI assisted*
